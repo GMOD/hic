@@ -22,35 +22,20 @@ Releases publish automatically via GitHub Actions using npm trusted publishing
 (OIDC, no stored token). The publish job needs `id-token: write` permissions;
 npm attaches provenance automatically under trusted publishing.
 
-**The first publish cannot be a trusted one.** npm requires the package to
-already exist on the registry before a trust relationship can be configured
-([npm/cli#8544](https://github.com/npm/cli/issues/8544) tracks lifting this).
-So the bootstrap, once, is to publish a throwaway version by hand, hang the
-trust relationship off it, and let CI cut the first real release:
+This repo is already configured — `npm trust list @gmod/hic` shows it. Setting
+it up on a new package takes npm 11.15.0 or newer and account-level 2FA:
+`npm trust github <pkg> --file publish.yml --repo GMOD/<repo> --allow-publish`.
+The package has to exist on the registry first, so a new one's initial version
+is published by hand and everything after it comes from CI.
 
-```sh
-# 1. a placeholder, by hand. `pnpm build` is NOT optional — there is no
-#    prepack script, so `npm publish` ships whatever is in dist/ and esm/,
-#    and on a clean checkout that is nothing at all.
-npm version 0.0.1 --no-git-tag-version
-pnpm build && npm publish --access public
+`1.0.0` was that hand-published version and so carries no provenance, and has no
+`v1.0.0` tag. **Don't tag it retroactively** — pushing `v1.0.0` would run the
+publish job against a version that already exists, fail, and take the GitHub
+release job with it (`release` needs `publish`). Releases resume at `1.0.1`.
 
-# 2. now that the package exists, configure trusted publishing
-npm trust github @gmod/hic --file publish.yml --repo GMOD/hic
-
-# 3. the real release, from CI, with provenance
-pnpm version 1.0.0
-npm deprecate @gmod/hic@0.0.1 "bootstrap placeholder, use 1.0.0 or later"
-```
-
-`npm trust` requires **npm 11.15.0 or newer** (`npm install -g npm@^11.15.0`)
-and account-level 2FA; granular access tokens with the bypass-2FA option are
-not accepted.
-
-**Don't hand-publish `1.0.0` and then tag it.** Pushing a `v1.0.0` tag runs the
-publish job, which would try to publish a version that already exists, fail, and
-take the GitHub release job down with it (`release` needs `publish`). Every
-version the repo tags should be one CI published.
+Note `npm publish` does not build: there is no `prepack`, because CI builds
+before publishing. A publish by hand needs `pnpm build` first or it ships
+without `dist/` and `esm/`.
 
 Once npm publish succeeds, the `release` job creates the GitHub release for the
 tag. Its notes are that version's CHANGELOG.md section, extracted by
