@@ -64,13 +64,14 @@ See [docs/api.md](docs/api.md) for the full API reference.
 
 - Bin indices are **absolute for their chromosome**, not relative to the
   requested region.
-- A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose
-  x window sits left of its y window is swapped before it is issued;
+- A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose x
+  window sits left of its y window gets swapped before it goes out;
   `transposed` says so, and `bin1` then runs along `region2`.
-- `appliedNormalization` is what was actually applied, which is not always what
-  was asked for — normalization vectors are stored per (type, chromosome, unit,
-  binsize), so a file can offer KR at 5 kb and nothing at 2.5 Mb.
-- `BP` is the only unit supported; the FRAG code paths were dropped.
+- `appliedNormalization` names the normalization the file actually applied,
+  which is not always the one you asked for — a `.hic` carries normalization
+  vectors per (type, chromosome, unit, binsize), so it can offer KR at 5 kb and
+  nothing at 2.5 Mb.
+- `BP` is the only unit this fork supports; it drops the FRAG code paths.
 
 ## Academic use
 

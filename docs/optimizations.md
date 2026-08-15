@@ -2,9 +2,8 @@
 
 This package began as a TypeScript port of
 [hic-straw](https://github.com/aidenlab/hic-straw) and keeps its `.hic` parsing
-logic. What changed is mostly downstream of the parse: how records are
-represented, how much is cached, and how many sequential round trips a fetch
-costs.
+logic. What changed is mostly downstream of the parse: how it represents
+records, how much it caches, and how many sequential round trips a fetch costs.
 
 Most of it follows from a different consumer. Upstream serves juicebox, which
 asks for one chromosome-aligned region pair at a time. A genome browser asks
@@ -27,11 +26,13 @@ The port is lean by design:
 - Inflate is `pako-esm2` rather than a bundled `zlib_and_gzip.js`.
 - Dropped: the legacy normalization-vector-index lookup table (`nvi.js`), the
   orphan `polygons.js`, the unused `DynamicBlockIndex`, and the FRAG-site code
-  paths. FRAG zoom levels are still parsed off the wire, just not retained.
+  paths. The parser still reads FRAG zoom levels off the wire, it just drops
+  them.
 - The `Straw` wrapper class is gone. It forwarded three methods unchanged to
   `HicFile`, which is now the entry point directly.
-- All sources are TypeScript. Output was verified identical to the npm package
-  before the changes below (`test/verify.test.ts` still pins the counts).
+- All sources are TypeScript. We checked the output against the npm package's,
+  record for record, before making the changes below (`test/verify.test.ts`
+  still pins the counts).
 
 ## Correctness
 
@@ -49,13 +50,13 @@ than one bin, which a coarse locked binsize reaches easily.
 overlapping the region. It lives in its own module because the record filter
 and the block-number selection must agree: widening only one still drops
 records, since a bin can sit in a block the other never asked for. Flooring
-also matches the normalization vector slice, so `bin1 - offset1` indexes
-exactly the values that were fetched.
+also matches the normalization vector slice, so `bin1 - offset1` indexes exactly
+the values the fetch brought back.
 
 ### Transposition compares starts, not start against end
 
-A `.hic` stores only the `bin1 <= bin2` half, so a pair whose x window sits
-right of its y window must be swapped. Upstream's same-chromosome test is
+A `.hic` stores only the `bin1 <= bin2` half, so the reader has to swap a pair
+whose x window sits right of its y window. Upstream's same-chromosome test is
 `region1.start >= region2.end`, which catches a reversed pair only while the
 two are disjoint. A multi-region view queries pairs in screen order, and those
 regions may overlap.
@@ -106,18 +107,18 @@ Counts are `Float32Array` because float32 is both what the file stores and what
 a shader takes, so carrying them as doubles only ever widened a value on its
 way back down.
 
-Every block encoding knows its length up front, so each array is allocated once
-and filled by a write cursor. Where a filter can drop records — the dense
-encoding's empty cells — the arrays are sized to the upper bound and copied
-down to the true length at the end, rather than left oversized in a cache that
-outlives the fetch.
+Every block encoding knows its length up front, so the parser allocates each
+array once and fills it through a write cursor. Where a filter can drop records
+— the dense encoding's empty cells — it sizes to the upper bound and copies down
+to the true length at the end, rather than leaving an oversized array in a cache
+that outlives the fetch.
 
 ### Caches are sized against the region-pair working set
 
 A fetch's working set is a function of the displayed region count, and two of
 the three caches grow with its square. Sized for one region, they don't merely
-underperform, they invert: the entries a fetch will need again are evicted by
-the same fetch, so the cache costs eviction bookkeeping and returns nothing.
+underperform, they invert: a fetch evicts the very entries it is about to need
+again, so the cache costs eviction bookkeeping and returns nothing.
 
 Range reads for a fetch and then an identical repeat fetch, which is what every
 pan issues:
@@ -156,9 +157,9 @@ set and `maxBytes` is the backstop it was standing in for.
 
 Region pairs run concurrently and share chromosomes, so a result-only cache had
 every concurrent pair miss while the first was still in flight and re-issue the
-same reads — measured +12 range requests on a 6-pair fetch. Each such promise
-is evicted if it rejects, so a transient failure retries rather than being
-cached forever.
+same reads — measured +12 range requests on a 6-pair fetch. A promise that
+rejects drops out of the cache, so a transient failure retries instead of
+sticking around forever.
 
 ### A region pair costs the deeper of its two read chains
 
@@ -192,14 +193,15 @@ that is about 4× faster — 63 blocks, 2.77 MB inflated: 42 ms with pako agains
 9 ms with wasm libdeflate (node's own `zlib.inflateSync`, browser-unavailable,
 lands at 13 ms).
 
-It is not adopted here because the win is smaller than the ratio suggests and
-the packaging cost is real. Decompression is roughly a fifth of a cold local
+This package still does not adopt it, because the win is smaller than the ratio
+suggests and the packaging cost is real. Decompression is roughly a fifth of a
+cold local
 chr1 fetch on this file (5.9 ms of ~30–45 ms), and a remote fetch is
 latency-bound before it is CPU-bound. Against that, the inlined wasm bundle is
 ~65 KB, and `bbi-js` keeps its copy private — so adopting it means either a
 second copy of the crate and the bundle, or first factoring the inflate wasm
-out into a package both can depend on. The second is the right shape if this is
-ever wanted, since an application loading both would otherwise ship the bundle
+out into a package both can depend on. The second is the right shape if anyone
+ever wants it, since an application loading both would otherwise ship the bundle
 twice.
 
 The case gets stronger with block size: deep files at fine resolution decode
@@ -216,10 +218,10 @@ of seven runs, ms:
 | 2.5 Mb     |     25 |      6 KB |  2.4 |                   7.6 |             1.2 |
 | 100 kb     |     63 |     43 KB | 36.6 |                  45.6 |             9.2 |
 
-It is 5–6× the wasm path and slower than pako at both resolutions. The reason is
-that a `.hic` stores each block as its own zlib stream, so the API can only be
-called once per block, and dividing through gives 300–720 µs of overhead per
-call — far more than the inflating. A wasm call pays that once per block too,
+It is 5–6× the wasm path and slower than pako at both resolutions. A `.hic`
+stores each block as its own zlib stream, so a caller reaches the API once per
+block, and dividing through gives 300–720 µs of overhead per call — far more
+than the inflating. A wasm call pays that once per block too,
 but its fixed cost is roughly 20 µs, and a batched entry point pays it once for
 the whole group.
 
@@ -234,7 +236,7 @@ reaches the same answer more sharply (hundreds of small blocks per query), while
 [`@gmod/bgzf-filehandle`](https://github.com/GMOD/bgzf-filehandle/blob/main/docs/optimizations.md)
 comes within ~2× of wasm, because concatenated gzip members let a whole buffer
 go through one call. Same API and codec throughout; what differs is how many
-times it has to be called.
+times a caller must invoke it.
 
 ## API
 
@@ -244,7 +246,7 @@ Two things upstream reports to the console, this returns instead:
   at 2.5 Mb. Upstream warns and hands back raw counts, which is not visible to
   the caller and so not visible to the user; that warning also fires once per
   chromosome per region pair per fetch.
-- **`transposed`**, because the swap is decided from the file's own alias table
+- **`transposed`**, because the swap follows from the file's own alias table
   and chromosome indices. A caller re-deriving it against a divergent
   chromosome-naming scheme would silently un-swap the wrong axis.
 
