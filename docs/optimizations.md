@@ -205,32 +205,36 @@ twice.
 The case gets stronger with block size: deep files at fine resolution decode
 far more than 2.77 MB per fetch, and there the ratio is the whole story.
 
-### Not `DecompressionStream`
+### Not `DecompressionStream` either
 
-The platform's own inflate looks like the obvious way to get the speed without
-the bundle, and it is not. Sweeping block size with the total held at ~8 MB
-inflated (node 24, synthetic blocks of int/int/float records, best of 5, ms):
+The platform's own inflate is the obvious way to get some of that speed without
+any bundle at all, and it does not work out. Over this file's real blocks, best
+of seven runs, ms:
 
-| block size | blocks | pako | DS serial | DS parallel | wasm libdeflate |
-| ---------- | -----: | ---: | --------: | ----------: | --------------: |
-| 3 KB       |   2604 |  144 |       559 |         280 |              51 |
-| 12 KB      |    651 |  194 |       303 |         137 |              49 |
-| 96 KB      |     81 |  179 |       141 |          29 |              41 |
-| 768 KB     |     10 |  162 |       112 |          62 |              50 |
-| 3 MB       |      3 |  225 |        88 |          83 |              66 |
+| resolution | blocks | avg block | pako | `DecompressionStream` | wasm libdeflate |
+| ---------- | -----: | --------: | ---: | --------------------: | --------------: |
+| 2.5 Mb     |     25 |      6 KB |  2.4 |                   7.6 |             1.2 |
+| 100 kb     |     63 |     43 KB | 36.6 |                  45.6 |             9.2 |
 
-`DecompressionStream` pays a large fixed cost per call — roughly 215 µs a block
-in the top row, against about 20 µs for a wasm call including the
-decompression itself — so it does not overtake even pako until blocks reach
-~96 KB, and never beats wasm at any size. wasm barely moves across three orders
-of magnitude.
+It is 5–6× the wasm path and slower than pako at both resolutions. The reason is
+that a `.hic` stores each block as its own zlib stream, so the API can only be
+called once per block, and dividing through gives 300–720 µs of overhead per
+call — far more than the inflating. A wasm call pays that once per block too,
+but its fixed cost is roughly 20 µs, and a batched entry point pays it once for
+the whole group.
 
-Hic blocks measured 44–230 KB on this file depending on binsize, which straddles
-that crossover; the parallel column also assumes every block is in flight at
-once. And these are node numbers, where the API is zlib with little plumbing
-around it — a browser adds the Blob → stream → Response path, so this is its
-best case rather than its typical one. It has also only been baseline since May
-2023, so a fallback ships regardless, which is the bundle argument gone.
+These are node numbers, where `DecompressionStream` is zlib with little plumbing
+around it; a browser adds the Blob → stream → Response path, so read the column
+as its best case. It has also only been baseline since May 2023 (Safari 16.4,
+Firefox 113), so a fallback ships regardless — which is the bundle argument gone.
+
+The same question, measured in the two sibling libraries:
+[`@gmod/bbi`](https://github.com/GMOD/bbi-js/blob/main/docs/wasm.md#why-not-the-platforms-decompressionstream)
+reaches the same answer more sharply (hundreds of small blocks per query), while
+[`@gmod/bgzf-filehandle`](https://github.com/GMOD/bgzf-filehandle/blob/main/docs/optimizations.md)
+comes within ~2× of wasm, because concatenated gzip members let a whole buffer
+go through one call. Same API and codec throughout; what differs is how many
+times it has to be called.
 
 ## API
 
