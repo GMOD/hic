@@ -205,6 +205,33 @@ twice.
 The case gets stronger with block size: deep files at fine resolution decode
 far more than 2.77 MB per fetch, and there the ratio is the whole story.
 
+### Not `DecompressionStream`
+
+The platform's own inflate looks like the obvious way to get the speed without
+the bundle, and it is not. Sweeping block size with the total held at ~8 MB
+inflated (node 24, synthetic blocks of int/int/float records, best of 5, ms):
+
+| block size | blocks | pako | DS serial | DS parallel | wasm libdeflate |
+| ---------- | -----: | ---: | --------: | ----------: | --------------: |
+| 3 KB       |   2604 |  144 |       559 |         280 |              51 |
+| 12 KB      |    651 |  194 |       303 |         137 |              49 |
+| 96 KB      |     81 |  179 |       141 |          29 |              41 |
+| 768 KB     |     10 |  162 |       112 |          62 |              50 |
+| 3 MB       |      3 |  225 |        88 |          83 |              66 |
+
+`DecompressionStream` pays a large fixed cost per call — roughly 215 µs a block
+in the top row, against about 20 µs for a wasm call including the
+decompression itself — so it does not overtake even pako until blocks reach
+~96 KB, and never beats wasm at any size. wasm barely moves across three orders
+of magnitude.
+
+Hic blocks measured 44–230 KB on this file depending on binsize, which straddles
+that crossover; the parallel column also assumes every block is in flight at
+once. And these are node numbers, where the API is zlib with little plumbing
+around it — a browser adds the Blob → stream → Response path, so this is its
+best case rather than its typical one. It has also only been baseline since May
+2023, so a fallback ships regardless, which is the bundle argument gone.
+
 ## API
 
 Two things upstream reports to the console, this returns instead:
