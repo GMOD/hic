@@ -38,6 +38,6 @@ before publishing. A publish by hand needs `pnpm build` first or it ships
 without `dist/` and `esm/`.
 
 Once npm publish succeeds, the `release` job creates the GitHub release for the
-tag. Its notes are that version's CHANGELOG.md section, extracted by
-`scripts/release-notes.sh` — run that with a version to preview what a release
-will say.
+tag, taking its notes from that version's CHANGELOG.md section — which
+`scripts/release-notes.sh` extracts, so run that with a version to preview what
+a release will say.
