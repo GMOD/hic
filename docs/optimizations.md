@@ -88,31 +88,50 @@ first never sees it.
 Read this before the sections under it, because it is worth more than all of
 them together and none of it is this package's code.
 
-A whole-genome fetch of the test file issues 1,007 range reads at 2.5 Mb and
-1,739 at 100 kb. A browser runs about six requests per origin at a time, so at a
-50 ms round trip that is **8 to 15 seconds** before a byte is decoded. Every CPU
-cost below — inflate, the record filter, the block parse — adds up to under 100
-ms on the same fetch. Two orders of magnitude apart.
+Whole chr1 at 5 kb, against ENCODE's `ENCFF148QCR` — a real 69 GB hg38 v9 file
+over the public internet, in headless Chrome:
 
-Those reads coalesce almost perfectly, because a `.hic` stores a matrix's blocks
-contiguously. Putting
+| filehandle                 | wall clock | HTTP requests | contacts  |
+| -------------------------- | ---------: | ------------: | --------- |
+| `RemoteFile`               | **24.0 s** |           225 | 5,182,471 |
+| `RemoteFileWithRangeCache` |  **1.8 s** |            45 | 5,182,471 |
+
+Same bytes out, 13x the wall clock. Every CPU cost below — inflate, the record
+filter, the block parse — is under 100 ms on a fetch this size. Two orders of
+magnitude apart, so a remote consumer that tunes the codec and skips the cache
+has optimized the wrong end by a factor of a hundred.
+
+A `.hic` scatters a fetch across hundreds of small ranges, and a browser runs
+about six per origin at a time, so the request count sets the clock. Blocks are
+stored contiguously, so the ranges coalesce:
 [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
-under the parser (`pnpm bench:requests`):
+turns runs of them into one request each and serves the overlaps from memory.
+Node shows the same shape less sharply (15.3 s to 2.5 s) because it has no
+six-connection cap — the browser is the case that matters and the worse one.
+
+`pnpm bench:requests` reproduces the effect offline, against the test fixture
+and with no network in the way:
 
 | binsize | bare requests | cached requests |   bare | cached |
 | ------- | ------------: | --------------: | -----: | -----: |
 | 2.5 Mb  |         1,007 |              17 | 1.0 MB | 4.5 MB |
 | 100 kb  |         1,739 |              20 | 7.6 MB | 5.2 MB |
 
-59x and 87x fewer requests: 8.4 s becomes 0.1 s, 14.5 s becomes 0.2 s. At 100 kb
-it also transfers _less_ than the uncached path, because the coalescer serves
-overlapping reads from one chunk where the bare path fetched the same bytes
-repeatedly.
+At 100 kb the cached path transfers _less_ than the bare one, because the
+coalescer serves overlapping reads from one chunk where the bare path fetched
+the same bytes repeatedly.
 
-This package does not do it itself — it takes a filehandle, and stacking a cache
-under one is the caller's call — but a remote consumer that skips it is leaving
-seconds on the table to save milliseconds elsewhere. The README shows the
-wiring.
+This package does not stack the cache itself — it takes a filehandle, and what
+goes under it is the caller's call — but the README shows the wiring, and a
+remote consumer should treat it as required rather than optional.
+
+**A note on hosting.** ENCODE's `@@download` URL 302s to a signed S3 URL, and a
+CORS preflight does not follow redirects, so a browser cannot range-read it
+directly however the parser is configured — `fetch` fails before this library
+sees anything. The S3 target itself answers preflights correctly
+(`Access-Control-Allow-Headers: range`), so the fix is to resolve the redirect
+server-side and hand the browser the final URL. Worth knowing before concluding
+a file is unreadable.
 
 ### Contacts are struct-of-arrays
 

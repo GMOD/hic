@@ -56,8 +56,9 @@ issues over a thousand of them — and a browser runs about six requests per
 origin at a time, so the request count sets the wall clock.
 [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
 is a drop-in for `RemoteFile` that coalesces those reads into one request per
-contiguous run, which measures 59–87x fewer requests here (`pnpm
-bench:requests`):
+contiguous run. Measured in headless Chrome against a real 69 GB ENCODE file,
+whole chr1 at 5 kb: **24.0 s and 225 requests becomes 1.8 s and 45**, for
+byte-identical output.
 
 ```js
 import { RemoteFileWithRangeCache } from '@gmod/range-cache-filehandle'
