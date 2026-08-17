@@ -23,7 +23,7 @@ digraph hicjs {
         fontname="Helvetica" fontsize=10 margin="0.14,0.07"]
   edge [color="#57606a" fontname="Helvetica" fontsize=9]
 
-  query [label="getContactRecords(norm, r1, r2, binsize)" fillcolor="#ddf4ff" color="#0969da"]
+  query [label="getContactRecords(norm, r1, r2, units, binsize)" fillcolor="#ddf4ff" color="#0969da"]
   init  [label="read header + footer" fillcolor="#dafbe1" color="#1a7f37"]
   meta  [label="chromosomes, resolutions,\nmaster index" fillcolor="#fff8c5" color="#9a6700"]
   win   [label="transpose pair, binWindow"]
@@ -70,12 +70,14 @@ digraph hicjs {
   nvidx   -> nvhdr
   nvhdr   -> nvvals
   nvvals  -> filter
-  nvcache -> filter [label=" hit "]
+  // A hit returns the vector, not its values, so it still asks for the slice
+  // this region needs — the vector's own ±1000-value cache usually answers.
+  nvcache -> nvvals [label=" hit "]
 
   matcache -> mathdr [label=" miss "]
   mathdr   -> blknums
-  blknums  -> blkcache
-  blkcache -> readblk [label=" miss "]
+  blknums  -> blkcache [label=" per block "]
+  blkcache -> readblk [label=" miss, in parallel "]
   readblk  -> unzip
   unzip    -> parse
   parse    -> filter
