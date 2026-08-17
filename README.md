@@ -49,11 +49,15 @@ const hic = new HicFile({
 })
 ```
 
-A contact-matrix query reads many small blocks scattered through the file, so
-over HTTP it is worth putting a byte-range cache underneath —
+**Over HTTP, put a byte-range cache underneath. It is worth more than every
+other optimization in this package combined.** A contact-matrix query reads many
+small blocks scattered through the file — a whole-genome view of the test file
+issues over a thousand of them — and a browser runs about six requests per
+origin at a time, so the request count sets the wall clock.
 [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
 is a drop-in for `RemoteFile` that coalesces those reads into one request per
-contiguous run:
+contiguous run, which measures 59–87x fewer requests here (`pnpm
+bench:requests`):
 
 ```js
 import { RemoteFileWithRangeCache } from '@gmod/range-cache-filehandle'

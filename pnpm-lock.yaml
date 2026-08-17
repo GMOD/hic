@@ -18,6 +18,9 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.1(supports-color@7.2.0))
+      '@gmod/range-cache-filehandle':
+        specifier: ^1.0.2
+        version: 1.0.2
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
@@ -125,6 +128,9 @@ packages:
 
   '@gmod/inflate@1.0.0':
     resolution: {integrity: sha512-sYVWYJyl8gyU/Q8FqpEe682Kpv527ZVwln2dDqJXr1/lRPWfjCJGuVTxR78SPZAgoRYDDtIUsN3D4if3F7/cBA==}
+
+  '@gmod/range-cache-filehandle@1.0.2':
+    resolution: {integrity: sha512-M1dQYtcPXMqHGBoxAUjX+czeVpWgWGfQWd1uI2k51Z8aYIyoBlHBYysbZX34oDCFKnjQUNO+/jR4wWx1vlDBeA==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1295,6 +1301,10 @@ snapshots:
       levn: 0.4.1
 
   '@gmod/inflate@1.0.0': {}
+
+  '@gmod/range-cache-filehandle@1.0.2':
+    dependencies:
+      generic-filehandle2: 2.3.1
 
   '@humanfs/core@0.19.2':
     dependencies:

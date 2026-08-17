@@ -83,6 +83,37 @@ first never sees it.
 
 ## Performance
 
+### Round trips, not CPU, are the budget
+
+Read this before the sections under it, because it is worth more than all of
+them together and none of it is this package's code.
+
+A whole-genome fetch of the test file issues 1,007 range reads at 2.5 Mb and
+1,739 at 100 kb. A browser runs about six requests per origin at a time, so at a
+50 ms round trip that is **8 to 15 seconds** before a byte is decoded. Every CPU
+cost below — inflate, the record filter, the block parse — adds up to under 100
+ms on the same fetch. Two orders of magnitude apart.
+
+Those reads coalesce almost perfectly, because a `.hic` stores a matrix's blocks
+contiguously. Putting
+[`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
+under the parser (`pnpm bench:requests`):
+
+| binsize | bare requests | cached requests |   bare | cached |
+| ------- | ------------: | --------------: | -----: | -----: |
+| 2.5 Mb  |         1,007 |              17 | 1.0 MB | 4.5 MB |
+| 100 kb  |         1,739 |              20 | 7.6 MB | 5.2 MB |
+
+59x and 87x fewer requests: 8.4 s becomes 0.1 s, 14.5 s becomes 0.2 s. At 100 kb
+it also transfers _less_ than the uncached path, because the coalescer serves
+overlapping reads from one chunk where the bare path fetched the same bytes
+repeatedly.
+
+This package does not do it itself — it takes a filehandle, and stacking a cache
+under one is the caller's call — but a remote consumer that skips it is leaving
+seconds on the table to save milliseconds elsewhere. The README shows the
+wiring.
+
 ### Contacts are struct-of-arrays
 
 Upstream models a contact as an object, and the whole read path inherits that
