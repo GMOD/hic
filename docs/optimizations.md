@@ -108,19 +108,22 @@ the three caches grow with its square. Sized for one region they invert: a
 fetch evicts the very entries it is about to need again, so the cache costs
 eviction bookkeeping and returns nothing.
 
-Range reads for a fetch and then an identical repeat fetch, which is what every
-pan issues:
+Range reads for a fetch, then for an identical repeat fetch — what every pan
+issues — beside the distinct entries the fetch wanted resident at once
+(`pnpm bench:cache`):
 
-| regions | pairs | before      | after   |
-| ------- | ----- | ----------- | ------- |
-| 4       | 10    | 29 / 0      | 29 / 0  |
-| 5       | 15    | 40 / 15     | 40 / 0  |
-| 10      | 55    | 130 / 110   | 130 / 0 |
-| 24      | 300   | 1106 / 1106 | 648 / 0 |
+| regions | pairs | cold | warm | blocks | matrices | vectors |
+| ------- | ----- | ---- | ---- | -----: | -------: | ------: |
+| 4       | 10    | 41   | 0    |     10 |       10 |       4 |
+| 5       | 15    | 57   | 0    |     15 |       15 |       5 |
+| 10      | 55    | 182  | 0    |     55 |       55 |      10 |
+| 24      | 300   | 932  | 0    |    300 |      300 |      24 |
 
-The cliffs are exactly the three capacities. Note the first column: 41% of a
-cold whole-genome fetch's reads were re-reads of normalization vectors the same
-fetch had already issued.
+Warm is zero at every size, so a pan re-reads nothing. Read the working-set
+columns against the capacities to see what that costs upstream: hic-straw caps
+blocks at 6, matrices at 10 and vectors at 10, so the smallest view here
+already wants more blocks than the cache can hold, and by 24 regions it is over
+every one of them by a factor of 30.
 
 The block cache key carries the binsize already, so entries at different
 resolutions coexist; upstream's extra `resolution` field cleared the whole map
@@ -133,10 +136,12 @@ for the lifetime of the cache.
 ### The LRU has a byte budget as well as an entry cap
 
 An entry cap is a memory bound only while entries are interchangeable, and
-blocks are not: one holds every contact in its bin square, which varies by more
-than an order of magnitude with binsize and distance from the diagonal (0.05 MB
-at 2.5 Mb, 0.23 MB at 100 kb on the test file). Now the entry cap tracks the
-working set and `maxBytes` is the memory backstop it was standing in for.
+blocks are not: one holds every contact in its bin square, which varies with
+binsize and distance from the diagonal. On the test file the biggest block is
+0.053 MB at 2.5 Mb against 0.240 MB at 100 kb, and within one resolution the
+biggest is 2–3× the mean (`pnpm bench:cache` prints both). Now the entry cap
+tracks the working set and `maxBytes` is the memory backstop it was standing in
+for.
 
 Splitting them is also what makes one of the two safe to expose. `maxBytes` is
 the `blockCacheMaxBytes` config option, since a caller knows its own memory
@@ -177,44 +182,58 @@ in the same macrotask turn and counting the drains.
 
 ## Measured but not done: a faster inflate
 
-Blocks are zlib streams, inflated with `pako-esm2`. `bbi-js` runs the same kind
-of stream through a wasm libdeflate build, about 4× faster on this file's
-blocks — 63 blocks, 2.77 MB inflated: 42 ms pako against 9 ms wasm (node's own
-`zlib.inflateSync`, browser-unavailable, lands at 13 ms).
+Blocks are zlib streams, inflated with `pako-esm2`. `benchmarks/inflate.bench.ts`
+(`pnpm benchonly inflate`) runs the alternatives over this file's real blocks —
+every intra-chromosomal block at each resolution — with all arms asserted
+byte-identical first. Mean ms, node 24:
 
-This package still does not adopt it. Decompression is roughly a fifth of a
-cold local chr1 fetch here (5.9 ms of ~30–45 ms) and a remote fetch is
-latency-bound before it is CPU-bound, so the win is smaller than the ratio
-suggests. Against that, the inlined wasm bundle is ~65 KB and `bbi-js` keeps
-its copy private: adopting it means either a second copy of the crate and the
-bundle, or first factoring the inflate wasm out into a package both can depend
-on.
+| resolution | blocks | avg block | pako | node zlib | `DecompressionStream` |
+| ---------- | -----: | --------: | ---: | --------: | --------------------: |
+| 2.5 Mb     |     25 |      6 KB |  1.5 |      0.47 |                   3.4 |
+| 100 kb     |     63 |     43 KB | 24.4 |       7.3 |                  18.2 |
+
+Native zlib is 3.2–3.4× pako at both sizes, and it is the floor the other two
+are measured against — it is not a candidate, since no browser has it.
+`bbi-js` gets close to it in a browser through a wasm libdeflate build, roughly
+4× pako on streams of this kind.
+
+This package still does not adopt that. Decompression is a fifth or so of a
+cold local fetch and a remote one is latency-bound before it is CPU-bound, so
+the win is smaller than the ratio suggests. Against that, the inlined wasm
+bundle is ~65 KB and `bbi-js` keeps its copy private: adopting it means either
+a second copy of the crate and the bundle, or first factoring the inflate wasm
+out into a package both can depend on.
+
+That is also why the table above has no wasm column. The bundle is not
+importable from outside `bbi-js`, so this repo cannot reproduce that arm, and
+an unreproducible number in a benchmark's output table is worth less than the
+gap it would fill — see
+[`@gmod/bbi`](https://github.com/GMOD/bbi-js/blob/main/docs/wasm.md#why-not-the-platforms-decompressionstream)
+for it, measured there.
 
 ### Not `DecompressionStream` either
 
-The platform's own inflate would get some of that speed with no bundle at all.
-It does not work out. Over this file's real blocks, best of seven runs, ms:
+The platform's own inflate would get some of that speed with no bundle at all,
+and the table above is why it does not. It is 7× native zlib at 2.5 Mb and 2.5×
+at 100 kb — a gap that closes as blocks grow, because a `.hic` stores each block
+as its own zlib stream, so a caller reaches the API once per block and pays its
+fixed cost every time. Subtracting the native floor puts that cost around
+120–170 µs per call. A wasm call pays a fixed cost per block too, but roughly
+20 µs of it, and a batched entry point pays it once for the whole group.
 
-| resolution | blocks | avg block | pako | `DecompressionStream` | wasm libdeflate |
-| ---------- | -----: | --------: | ---: | --------------------: | --------------: |
-| 2.5 Mb     |     25 |      6 KB |  2.4 |                   7.6 |             1.2 |
-| 100 kb     |     63 |     43 KB | 36.6 |                  45.6 |             9.2 |
+It does beat pako at 100 kb, which is the honest shape of the result: on large
+blocks the per-call overhead amortizes and the platform's zlib is simply faster
+than JS. What sinks it is that neither end of the range gets near wasm, and the
+small-block end — the one a browser hits while panning at coarse resolution —
+is its worst. It has also only been baseline since May 2023 (Safari 16.4,
+Firefox 113), so a fallback ships regardless, which is the bundle argument gone.
 
-It is 5–6× the wasm path and slower than pako at both resolutions. A `.hic`
-stores each block as its own zlib stream, so a caller reaches the API once per
-block; dividing through gives 300–720 µs of overhead per call, far more than
-the inflating. A wasm call pays a fixed cost per block too, but roughly 20 µs
-of it, and a batched entry point pays it once for the whole group.
-
-These are node numbers, where `DecompressionStream` is zlib with little plumbing
-around it; a browser adds the Blob → stream → Response path, so read that column
-as its best case. It has also only been baseline since May 2023 (Safari 16.4,
-Firefox 113), so a fallback ships regardless — which is the bundle argument gone.
-
-[`@gmod/bbi`](https://github.com/GMOD/bbi-js/blob/main/docs/wasm.md#why-not-the-platforms-decompressionstream)
-and
+These are node numbers, where `DecompressionStream` is zlib with little
+plumbing around it, though the benchmark does go through the browser's
+Blob → stream → Response path rather than a node shortcut.
 [`@gmod/bgzf-filehandle`](https://github.com/GMOD/bgzf-filehandle/blob/main/docs/optimizations.md)
-measured the same question against their own container shapes.
+measures the same question against a container that lets one call cover a whole
+buffer, and gets a different answer for that reason.
 
 ## What upstream logged, this returns
 

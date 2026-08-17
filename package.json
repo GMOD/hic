@@ -40,6 +40,8 @@
     "postversion": "git push --follow-tags",
     "build": "pnpm build:esm && pnpm build:es5",
     "coverage": "pnpm test --coverage",
+    "benchonly": "vitest bench",
+    "bench:cache": "node --experimental-strip-types scripts/bench-cache.ts",
     "version": "git-cliff --tag v$npm_package_version --unreleased --prepend CHANGELOG.md && git add CHANGELOG.md"
   },
   "keywords": [
