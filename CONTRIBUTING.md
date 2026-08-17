@@ -16,6 +16,24 @@ Use `pnpm version patch/minor/major` to release — it runs lint, format, types,
 tests and build, regenerates CHANGELOG.md with git-cliff, then pushes the
 version tag which triggers the publish workflow.
 
+## The dataflow diagram
+
+`docs/img/dataflow.svg` is generated from `docs/img/dataflow.dot` and committed,
+since GitHub does not render DOT. If you edit the `.dot`, re-render it in the
+same commit:
+
+```sh
+dot -Tsvg docs/img/dataflow.dot -o docs/img/dataflow.svg
+```
+
+Nothing checks this — graphviz is not a dependency and different versions emit
+different SVG bytes, so a staleness check would fail on toolchain drift rather
+than on a stale diagram.
+
+The palette and legend are shared with `bam-js`, `tabix-js` and `cram-js`; the
+`.dot` header says which of their conventions this one keeps and which it drops.
+Straighten a divergence rather than matching the outlier.
+
 ## Publishing
 
 Releases publish automatically via GitHub Actions using npm trusted publishing

@@ -49,6 +49,20 @@ const hic = new HicFile({
 })
 ```
 
+A contact-matrix query reads many small blocks scattered through the file, so
+over HTTP it is worth putting a byte-range cache underneath —
+[`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
+is a drop-in for `RemoteFile` that coalesces those reads into one request per
+contiguous run:
+
+```js
+import { RemoteFileWithRangeCache } from '@gmod/range-cache-filehandle'
+
+const hic = new HicFile({
+  filehandle: new RemoteFileWithRangeCache('https://example.com/file.hic'),
+})
+```
+
 Anything that can read `length` bytes at `position` works too, which is the
 hook for a caller with its own IO layer or cache:
 
@@ -72,6 +86,15 @@ See [docs/api.md](docs/api.md) for the full API reference.
   vectors per (type, chromosome, unit, binsize), so it can offer KR at 5 kb and
   nothing at 2.5 Mb.
 - `BP` is the only unit this fork supports; it drops the FRAG code paths.
+
+## Docs
+
+- [docs/api.md](docs/api.md) — every constructor option, method and return shape
+- [docs/dataflow.md](docs/dataflow.md) — how a fetch flows, and why the path
+  forks into two chains
+- [docs/optimizations.md](docs/optimizations.md) — what this fork changed
+  against hic-straw, and what measured it
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development and release steps
 
 ## Academic use
 

@@ -1,5 +1,8 @@
 # Design decisions and optimizations
 
+Why the read path looks the way it does. [dataflow.md](dataflow.md) draws the
+path itself.
+
 This package began as a TypeScript port of
 [hic-straw](https://github.com/aidenlab/hic-straw) and keeps its `.hic` parsing
 logic. What changed is mostly downstream of the parse: how it represents
