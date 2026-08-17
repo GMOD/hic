@@ -10,8 +10,7 @@ caching, round-trip depth — and most of it follows from a different consumer.
 Upstream serves juicebox, which asks for one chromosome-aligned region pair at
 a time. A genome browser asks for arbitrary viewport windows, many region pairs
 at once — a whole-genome human view is 24 regions, so 300 pairs — and hands the
-contacts to a GPU renderer. Nothing below is a fault in upstream's own setting;
-each is a place where its choices stop fitting that second one.
+contacts to a GPU renderer.
 
 Measurements are against `test/data/test.hic` (hg19, v8), upstream's own test
 data.
@@ -22,15 +21,12 @@ data.
   `RateLimiter`, `BrowserLocalFile`) and the deprecated local-`path` input are
   gone; `generic-filehandle2` covers the same ground, and a caller with its own
   cache can supply a bare `Reader`.
-- Inflate is `pako-esm2` rather than a bundled `zlib_and_gzip.js`.
 - Dropped: the legacy normalization-vector-index lookup table (`nvi.js`), the
-  orphan `polygons.js`, the unused `DynamicBlockIndex`, and the FRAG-site code
-  paths. The parser still reads FRAG zoom levels off the wire, it just drops
-  them.
-- The `Straw` wrapper class is gone; `HicFile` is the entry point directly.
-- All sources are TypeScript. We checked the output against the npm package's,
-  record for record, before making the changes below (`test/verify.test.ts`
-  still pins the counts).
+  orphan `polygons.js`, the unused `DynamicBlockIndex`, the `Straw` wrapper
+  class, and the FRAG-site code paths. The parser still reads FRAG zoom levels
+  off the wire, it just drops them.
+- We checked the output against the npm package's, record for record, before
+  making the changes below; `test/verify.test.ts` still pins the counts.
 
 ## Correctness
 
@@ -105,12 +101,6 @@ Counts are `Float32Array` because float32 is what the file stores and what a
 shader takes; carrying them as doubles only widened a value on its way back
 down.
 
-Every block encoding knows its length up front, so the parser allocates each
-array once and fills it through a write cursor. Where a filter can drop records
-— the dense encoding's empty cells — it sizes to the upper bound and copies down
-at the end, rather than leaving an oversized array in a cache that outlives the
-fetch.
-
 ### Caches are sized against the region-pair working set
 
 A fetch's working set is a function of the displayed region count, and two of
@@ -145,11 +135,8 @@ for the lifetime of the cache.
 An entry cap is a memory bound only while entries are interchangeable, and
 blocks are not: one holds every contact in its bin square, which varies by more
 than an order of magnitude with binsize and distance from the diagonal (0.05 MB
-at 2.5 Mb, 0.23 MB at 100 kb on the test file). One number was answering two
-questions — how many blocks a fetch needs at once, and how much memory the
-biggest may hold — and the memory question won, leaving the cache too small to
-serve a multi-region fetch. Now the entry cap tracks the working set and
-`maxBytes` is the backstop it was standing in for.
+at 2.5 Mb, 0.23 MB at 100 kb on the test file). Now the entry cap tracks the
+working set and `maxBytes` is the memory backstop it was standing in for.
 
 ### Caches hold the in-flight promise, not the resolved value
 
@@ -196,11 +183,7 @@ latency-bound before it is CPU-bound, so the win is smaller than the ratio
 suggests. Against that, the inlined wasm bundle is ~65 KB and `bbi-js` keeps
 its copy private: adopting it means either a second copy of the crate and the
 bundle, or first factoring the inflate wasm out into a package both can depend
-on. The second is the right shape if anyone ever wants it, since an application
-loading both would otherwise ship the bundle twice.
-
-The case gets stronger with block size: deep files at fine resolution decode
-far more than 2.77 MB per fetch, and there the ratio is the whole story.
+on.
 
 ### Not `DecompressionStream` either
 
@@ -223,26 +206,24 @@ around it; a browser adds the Blob → stream → Response path, so read that co
 as its best case. It has also only been baseline since May 2023 (Safari 16.4,
 Firefox 113), so a fallback ships regardless — which is the bundle argument gone.
 
-The sibling libraries measured the same question and the container shape decided
-it: [`@gmod/bbi`](https://github.com/GMOD/bbi-js/blob/main/docs/wasm.md#why-not-the-platforms-decompressionstream)
-answers more sharply still (hundreds of small blocks per query), while
+[`@gmod/bbi`](https://github.com/GMOD/bbi-js/blob/main/docs/wasm.md#why-not-the-platforms-decompressionstream)
+and
 [`@gmod/bgzf-filehandle`](https://github.com/GMOD/bgzf-filehandle/blob/main/docs/optimizations.md)
-comes within ~2× of wasm, because concatenated gzip members let a whole buffer
-go through one call.
+measured the same question against their own container shapes.
 
-## API
+## What upstream logged, this returns
 
-Two things upstream reports to the console, this returns instead:
+[api.md](api.md) documents the return fields; what follows is why they are
+return fields at all.
 
-- **`appliedNormalization`**, because a file can offer KR at 5 kb and nothing
-  at 2.5 Mb. Upstream logs and hands back raw counts, which the caller cannot
-  see and so the user cannot either; that log also sits inside the per-block
-  loop, so it repeats for every block of every region pair.
-- **`transposed`**, because the swap follows from the file's own alias table
-  and chromosome indices. A caller re-deriving it against a divergent
-  chromosome-naming scheme would silently un-swap the wrong axis.
+A normalization the file lacks at the requested resolution, and a chromosome
+pair with no matrix, both reach upstream's caller as a `console.log` and
+nothing else, so neither the caller nor the user can act on them. The
+normalization one sits inside `getContactRecords`' per-block loop, so it
+repeats for every block of every region pair. `appliedNormalization` and an
+empty result carry the same information where a caller can reach it.
 
-A missing chromosome pair returns no records rather than logging per pair, and
-the "no data at this resolution" error message is an exported constant, so a
-caller dropping that one pair out of 300 can recognize it without matching a
-hand-copied string.
+Upstream reports the transposition not at all — it swaps and returns. Deriving
+it caller-side means reproducing the file's own alias table and chromosome
+indices, and a caller doing that against a divergent naming scheme would
+silently un-swap the wrong axis, so `transposed` comes back with the records.
