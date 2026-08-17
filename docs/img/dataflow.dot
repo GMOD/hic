@@ -6,13 +6,21 @@
 // dataflow.md instead. A diagram that shows every branch stops being the thing
 // you look at first.
 //
+// Every label says what the step DOES first and names the code second, in the
+// small grey line under it. The audience arriving at a dataflow picture is
+// usually meeting `.hic` vocabulary for the first time — matrix, block, vector —
+// and a spine of bare function names asks them to know the code before the
+// picture can teach them anything. dataflow.md defines those three words just
+// above the diagram.
+//
 // SYNC: ~/src/gmod/bam-js/docs/img/dataflow.dot — same palette and spine;
-// ~/src/gmod/tabix-js and ~/src/gmod/cram-js share them too. Two entries of
-// their legend are missing here rather than restyled, because hic has neither:
-// no orange, since blocks inflate through pako in JS, and no purple, since
-// there is no worker pool. The clusters are what hic adds — cram also uses one,
-// but for what moves to a worker; here they are the two chains a pair runs
-// concurrently, which is the shape of the read path.
+// ~/src/gmod/tabix-js and ~/src/gmod/cram-js share them too. Three deliberate
+// divergences: the two-line labels above (the siblings label with the function
+// name alone), and two legend entries missing rather than restyled, because hic
+// has neither — no orange, since blocks inflate through pako in JS, and no
+// purple, since there is no worker pool. The clusters are what hic adds — cram
+// also uses one, but for what moves to a worker; here they are the two chains a
+// pair runs concurrently, which is the shape of the read path.
 digraph hicjs {
   rankdir=TB
   newrank=true
@@ -23,65 +31,79 @@ digraph hicjs {
         fontname="Helvetica" fontsize=10 margin="0.14,0.07"]
   edge [color="#57606a" fontname="Helvetica" fontsize=9]
 
-  query [label="getContactRecords(norm, r1, r2, units, binsize)" fillcolor="#ddf4ff" color="#0969da"]
-  init  [label="read header + footer" fillcolor="#dafbe1" color="#1a7f37"]
-  meta  [label="chromosomes, resolutions,\nmaster index" fillcolor="#fff8c5" color="#9a6700"]
-  win   [label="transpose pair, binWindow"]
+  query [label=<ask for the contacts between two regions<br/><font point-size="8" color="#57606a">getContactRecords(norm, r1, r2, units, binsize)</font>>
+         fillcolor="#ddf4ff" color="#0969da"]
+  init  [label=<read the header and footer<br/><font point-size="8" color="#57606a">once per file</font>>
+         fillcolor="#dafbe1" color="#1a7f37"]
+  meta  [label=<chromosomes, zoom levels,<br/>where each matrix sits in the file<br/><font point-size="8" color="#57606a">master index</font>>
+         fillcolor="#fff8c5" color="#9a6700"]
+  win   [label=<put the pair in file order,<br/>turn base pairs into bin numbers<br/><font point-size="8" color="#57606a">binWindow</font>>]
 
   subgraph cluster_norm {
-    label="normalization chain"
+    label="normalization chain — how to scale a count"
+    labeljust="l"
     fontname="Helvetica" fontsize=9 fontcolor="#57606a" color="#d0d7de"
     style="rounded,dashed"
     margin=10
 
-    nvcache [label="normVectorCache" fillcolor="#fff8c5" color="#9a6700"]
-    nvidx   [label="norm vector index\nonce per file" fillcolor="#fff8c5" color="#9a6700"]
-    nvhdr   [label="read vector header" fillcolor="#dafbe1" color="#1a7f37"]
-    nvvals  [label="read values" fillcolor="#dafbe1" color="#1a7f37"]
+    nvcache [label=<normalization cache<br/><font point-size="8" color="#57606a">normVectorCache</font>>
+             fillcolor="#fff8c5" color="#9a6700"]
+    nvidx   [label=<where every vector sits in the file<br/><font point-size="8" color="#57606a">norm vector index, once per file</font>>
+             fillcolor="#fff8c5" color="#9a6700"]
+    nvhdr   [label=<read the vector's header<br/><font point-size="8" color="#57606a">how many values it holds</font>>
+             fillcolor="#dafbe1" color="#1a7f37"]
+    nvvals  [label=<read one value per bin,<br/>for this region only<br/><font point-size="8" color="#57606a">getValues</font>>
+             fillcolor="#dafbe1" color="#1a7f37"]
   }
 
   subgraph cluster_blocks {
-    label="block chain"
+    label="block chain — where the counts live"
+    labeljust="l"
     fontname="Helvetica" fontsize=9 fontcolor="#57606a" color="#d0d7de"
     style="rounded,dashed"
     margin=10
 
-    matcache [label="matrixCache" fillcolor="#fff8c5" color="#9a6700"]
-    mathdr   [label="read matrix header" fillcolor="#dafbe1" color="#1a7f37"]
-    blknums  [label="getBlockNumbers"]
-    blkcache [label="blockCache" fillcolor="#fff8c5" color="#9a6700"]
-    readblk  [label="read block" fillcolor="#dafbe1" color="#1a7f37"]
-    unzip    [label="inflate"]
-    parse    [label="parseBlockRecords"]
+    matcache [label=<matrix cache<br/><font point-size="8" color="#57606a">matrixCache</font>>
+              fillcolor="#fff8c5" color="#9a6700"]
+    mathdr   [label=<read this chromosome pair's<br/>list of blocks<br/><font point-size="8" color="#57606a">matrix header, one per zoom level</font>>
+              fillcolor="#dafbe1" color="#1a7f37"]
+    blknums  [label=<which blocks cover the window?<br/><font point-size="8" color="#57606a">getBlockNumbers</font>>]
+    blkcache [label=<block cache<br/><font point-size="8" color="#57606a">blockCache</font>>
+              fillcolor="#fff8c5" color="#9a6700"]
+    readblk  [label=<read the block's bytes<br/><font point-size="8" color="#57606a">readBlock</font>>
+              fillcolor="#dafbe1" color="#1a7f37"]
+    unzip    [label=<decompress<br/><font point-size="8" color="#57606a">inflate, pako</font>>]
+    parse    [label=<decode it into bin, bin, count<br/><font point-size="8" color="#57606a">parseBlockRecords</font>>]
   }
 
-  filter [label="filter to bin window,\ndivide by v1 × v2"]
-  out    [label="ContactRecords\nbin1, bin2, counts" fillcolor="#ddf4ff" color="#0969da"]
+  filter [label=<keep the contacts inside the window,<br/>scale each by its two bins' values>]
+  out    [label=<contacts: bin1, bin2, count<br/><font point-size="8" color="#57606a">ContactRecords</font>>
+          fillcolor="#ddf4ff" color="#0969da"]
 
   query -> init
   init  -> meta
   meta  -> win
 
-  win -> nvcache  [label=" concurrent "]
-  win -> matcache [label=" concurrent "]
+  win -> nvcache  [label=" at the same time "]
+  win -> matcache [label=" at the same time "]
   { rank=same; nvcache; matcache }
 
-  nvcache -> nvidx [label=" miss "]
+  nvcache -> nvidx [label=" not cached "]
   nvidx   -> nvhdr
   nvhdr   -> nvvals
   nvvals  -> filter
   // A hit returns the vector, not its values, so it still asks for the slice
   // this region needs — the vector's own ±1000-value cache usually answers.
-  nvcache -> nvvals [label=" hit "]
+  nvcache -> nvvals [label=" cached "]
 
-  matcache -> mathdr [label=" miss "]
+  matcache -> mathdr [label=" not cached "]
   mathdr   -> blknums
-  blknums  -> blkcache [label=" per block "]
-  blkcache -> readblk [label=" miss, in parallel "]
+  blknums  -> blkcache [label=" for each block "]
+  blkcache -> readblk [label=" not cached, all at once "]
   readblk  -> unzip
   unzip    -> parse
   parse    -> filter
-  blkcache -> filter [label=" hit "]
+  blkcache -> filter [label=" cached "]
 
   filter -> out
 
@@ -95,8 +117,8 @@ digraph hicjs {
     style="rounded"
     margin=10
     node [shape=box style="filled,rounded" fontsize=9 margin="0.1,0.04"]
-    l1 [label="I/O" fillcolor="#dafbe1" color="#1a7f37"]
-    l2 [label="cached / shared" fillcolor="#fff8c5" color="#9a6700"]
+    l1 [label="reads the file" fillcolor="#dafbe1" color="#1a7f37"]
+    l2 [label="cached, shared by every region pair" fillcolor="#fff8c5" color="#9a6700"]
     l1 -> l2 [style=invis]
   }
 }

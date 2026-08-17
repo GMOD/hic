@@ -79,7 +79,7 @@ See [docs/api.md](docs/api.md) for the full API reference.
 - Bin indices are **absolute for their chromosome**, not relative to the
   requested region.
 - A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose x
-  window sits left of its y window gets swapped before it goes out;
+  window sits right of its y window gets swapped before it goes out;
   `transposed` says so, and `bin1` then runs along `region2`.
 - `appliedNormalization` names the normalization the file actually applied,
   which is not always the one you asked for — a `.hic` carries normalization
