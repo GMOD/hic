@@ -1,26 +1,26 @@
-// Isolated decompression benchmark: the pako path this library ships against
+// Isolated decompression benchmark: the wasm path this library ships against
 // the alternatives it could have been, over the real compressed blocks of
 // test/data/test.hic. Every arm inflates the same zlib streams and the results
 // are asserted byte-identical before timing, so this measures inflate
 // throughput and nothing else.
 //
-// - pako — the shipped path (`pako-esm2`).
+// - wasm libdeflate — the shipped path (`@gmod/inflate`).
+// - pako — the pure-JS baseline, and what this package shipped through v1.0.0.
 // - node zlib — the platform's native zlib. Not a candidate implementation; it
 //   does not exist in a browser. It is the reference floor, so the others can
 //   be read as "how far off native" rather than only against each other.
-// - `DecompressionStream` — the platform's own inflate, and the one alternative
-//   here that runs in a browser. One call PER BLOCK, because that is the only
-//   shape a `.hic` offers: each block is its own zlib stream, not a member of
-//   one concatenated stream, so there is nothing to hand it in bulk. Its
+// - `DecompressionStream` — the platform's own inflate, and the alternative
+//   that would need no bundle at all. One call PER BLOCK, because that is the
+//   only shape a `.hic` offers: each block is its own zlib stream, not a member
+//   of one concatenated stream, so there is nothing to hand it in bulk. Its
 //   per-call overhead therefore lands once per block, which is the whole result
 //   in docs/optimizations.md.
 //
-// There is deliberately no wasm libdeflate arm. `bbi-js` has one and it is
-// roughly 4x pako on these same blocks, but it does not export its inflate —
-// the bundle is private to that package — so this repo cannot reproduce that
-// column without vendoring a second copy of the crate, which is exactly the
-// cost docs/optimizations.md weighs and declines. Those figures stay attributed
-// to bbi-js rather than pretending to be reproducible here.
+// The wasm arm calls `inflateRawUnknownSize` once per block, matching what the
+// read path does — a `.hic` block index records compressed size only, so the
+// exact-size entry point is unavailable and the batch one has no bound to work
+// against. The per-block crossing is therefore part of the measurement rather
+// than something the benchmark optimizes away.
 //
 // The two fixtures are every intra-chromosomal block at each of the file's two
 // resolutions, which is what "this file's real blocks" means in the docs. They
@@ -30,6 +30,7 @@
 // Run with `pnpm benchonly inflate`.
 import { inflateSync } from 'node:zlib'
 
+import { inflateRawUnknownSize } from '@gmod/inflate'
 import { LocalFile } from 'generic-filehandle2'
 import { inflate } from 'pako-esm2'
 import { bench, describe } from 'vitest'
@@ -90,6 +91,15 @@ function perBlock(
   return blocks.map(inflateOne)
 }
 
+/** The shipped path: raw-deflate per block, header skipped, via wasm. */
+async function wasm({ blocks }: Fixture) {
+  const out: Uint8Array[] = []
+  for (const block of blocks) {
+    out.push(await inflateRawUnknownSize(block.subarray(2)))
+  }
+  return out
+}
+
 /** One call per block — see the header note on why there is no bulk shape. */
 async function decompressionStream({ blocks }: Fixture) {
   const out: Uint8Array[] = []
@@ -136,6 +146,7 @@ const fixtures = [
 // of them are measured.
 for (const fixture of fixtures) {
   const expected = perBlock(pako, fixture)
+  assertSame(expected, await wasm(fixture), 'wasm libdeflate')
   assertSame(expected, perBlock(inflateSync, fixture), 'node zlib')
   assertSame(
     expected,
@@ -156,7 +167,15 @@ for (const fixture of fixtures) {
 
   describe(`inflate ${label}`, () => {
     bench(
-      'pako (shipped)',
+      'wasm libdeflate (shipped)',
+      async () => {
+        await wasm(fixture)
+      },
+      { iterations, warmupIterations: 5 },
+    )
+
+    bench(
+      'pako',
       () => {
         perBlock(pako, fixture)
       },

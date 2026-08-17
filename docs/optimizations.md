@@ -180,56 +180,71 @@ in the same macrotask turn and counting the drains.
   refseq is longer than the size the `.hic` recorded — otherwise leaves
   `end > cache.end` true forever, and every call re-reads the same range.
 
-## Measured but not done: a faster inflate
+## Inflate is wasm libdeflate
 
-Blocks are zlib streams, inflated with `pako-esm2`. `benchmarks/inflate.bench.ts`
-(`pnpm benchonly inflate`) runs the alternatives over this file's real blocks —
-every intra-chromosomal block at each resolution — with all arms asserted
-byte-identical first. Mean ms, node 24:
+Blocks are zlib streams, and `@gmod/inflate` inflates them through a wasm
+[libdeflate](https://github.com/ebiggers/libdeflate) build.
+`benchmarks/inflate.bench.ts` (`pnpm benchonly inflate`) runs it against the
+alternatives over this file's real blocks — every intra-chromosomal block at
+each resolution — with all arms asserted byte-identical first. Mean ms, node 24:
 
-| resolution | blocks | avg block | pako | node zlib | `DecompressionStream` |
-| ---------- | -----: | --------: | ---: | --------: | --------------------: |
-| 2.5 Mb     |     25 |      6 KB |  1.5 |      0.47 |                   3.4 |
-| 100 kb     |     63 |     43 KB | 24.4 |       7.3 |                  18.2 |
+| resolution | blocks | avg block | wasm | pako | node zlib | `DecompressionStream` |
+| ---------- | -----: | --------: | ---: | ---: | --------: | --------------------: |
+| 2.5 Mb     |     25 |      6 KB | 0.58 |  1.5 |      0.48 |                   3.5 |
+| 100 kb     |     63 |     43 KB |  7.4 | 24.4 |       7.0 |                  19.6 |
 
-Native zlib is 3.2–3.4× pako at both sizes, and it is the floor the other two
-are measured against — it is not a candidate, since no browser has it.
-`bbi-js` gets close to it in a browser through a wasm libdeflate build, roughly
-4× pako on streams of this kind.
+Node's own `zlib.inflateSync` is in the table as the floor, not as a candidate —
+no browser has it. What matters is how close wasm gets to it: 1.06–1.21x, near
+enough that the remaining gap is the JS↔wasm crossing rather than the codec.
+Against pako, the pure-JS baseline this package shipped through v1.0.0, it is
+2.6–3.3x.
 
-This package still does not adopt that. Decompression is a fifth or so of a
-cold local fetch and a remote one is latency-bound before it is CPU-bound, so
-the win is smaller than the ratio suggests. Against that, the inlined wasm
-bundle is ~65 KB and `bbi-js` keeps its copy private: adopting it means either
-a second copy of the crate and the bundle, or first factoring the inflate wasm
-out into a package both can depend on.
+The call is `inflateRawUnknownSize`, once per block. A `.hic` block index
+records a block's _compressed_ size only, so the exact-size entry point has no
+size to take and the batched one has no bound to work against — the crossing is
+paid per block. Its 4x first guess clears this format's ~2.3x compression ratio
+in one pass, so the growth loop never runs in practice.
 
-That is also why the table above has no wasm column. The bundle is not
-importable from outside `bbi-js`, so this repo cannot reproduce that arm, and
-an unreproducible number in a benchmark's output table is worth less than the
-gap it would fill — see
-[`@gmod/bbi`](https://github.com/GMOD/bbi-js/blob/main/docs/wasm.md#why-not-the-platforms-decompressionstream)
-for it, measured there.
+### What it is worth end to end
 
-### Not `DecompressionStream` either
+Enough to be the reason to carry the bundle, which is not what an earlier
+version of this document predicted — it assumed decompression was about a fifth
+of a fetch and the win would wash out. Measured cold, medians:
 
-The platform's own inflate would get some of that speed with no bundle at all,
-and the table above is why it does not. It is 7× native zlib at 2.5 Mb and 2.5×
-at 100 kb — a gap that closes as blocks grow, because a `.hic` stores each block
-as its own zlib stream, so a caller reaches the API once per block and pays its
-fixed cost every time. Subtracting the native floor puts that cost around
-120–170 µs per call. A wasm call pays a fixed cost per block too, but roughly
-20 µs of it, and a batched entry point pays it once for the whole group.
+| fetch                            | pako | wasm |
+| -------------------------------- | ---: | ---: |
+| chr1 @ 2.5 Mb                    |  1.8 |  1.6 |
+| chr1 @ 100 kb                    |  5.4 |  3.3 |
+| whole genome, 325 pairs @ 2.5 Mb |   51 |   29 |
+| whole genome, 325 pairs @ 100 kb |  140 |   86 |
+
+A single chromosome at coarse resolution is one block, so it moves nothing. The
+whole-genome view — the shape this package exists for — is 40% faster, because
+decompression is roughly that share of it once a fetch touches hundreds of
+blocks. A remote fetch is still latency-bound before it is CPU-bound, so read
+these as the local ceiling.
+
+The bundle is ~49 KB, inlined as base64, and `@gmod/inflate` carries it so this
+package and `bbi-js` do not each ship their own copy of the crate — which was
+the blocking objection here until that package existed.
+
+### Not `DecompressionStream`
+
+The platform's own inflate would avoid the bundle entirely, and the table above
+is why it does not. It is 7x native zlib at 2.5 Mb and 2.8x at 100 kb, because a
+`.hic` stores each block as its own zlib stream: a caller reaches the API once
+per block and pays its fixed cost every time. Subtracting the native floor puts
+that cost around 120–170 µs per call, against roughly 20 µs for a wasm crossing.
 
 It does beat pako at 100 kb, which is the honest shape of the result: on large
 blocks the per-call overhead amortizes and the platform's zlib is simply faster
 than JS. What sinks it is that neither end of the range gets near wasm, and the
-small-block end — the one a browser hits while panning at coarse resolution —
-is its worst. It has also only been baseline since May 2023 (Safari 16.4,
-Firefox 113), so a fallback ships regardless, which is the bundle argument gone.
+small-block end — the one a browser hits while panning at coarse resolution — is
+its worst. It has also only been baseline since May 2023 (Safari 16.4, Firefox
+113), so a fallback ships regardless, which is the bundle argument gone.
 
-These are node numbers, where `DecompressionStream` is zlib with little
-plumbing around it, though the benchmark does go through the browser's
+These are node numbers, where `DecompressionStream` is zlib with little plumbing
+around it, though the benchmark does go through the browser's
 Blob → stream → Response path rather than a node shortcut.
 [`@gmod/bgzf-filehandle`](https://github.com/GMOD/bgzf-filehandle/blob/main/docs/optimizations.md)
 measures the same question against a container that lets one call cover a whole

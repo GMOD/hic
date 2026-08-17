@@ -8,12 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@gmod/inflate':
+        specifier: ^1.0.0
+        version: 1.0.0
       generic-filehandle2:
         specifier: ^2.3.1
         version: 2.3.1
-      pako-esm2:
-        specifier: ^2.0.2
-        version: 2.0.2
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -33,6 +33,9 @@ importers:
       git-cliff:
         specifier: ^2.13.1
         version: 2.13.1
+      pako-esm2:
+        specifier: ^2.0.2
+        version: 2.0.2
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
@@ -119,6 +122,9 @@ packages:
   '@eslint/plugin-kit@0.7.2':
     resolution: {integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@gmod/inflate@1.0.0':
+    resolution: {integrity: sha512-sYVWYJyl8gyU/Q8FqpEe682Kpv527ZVwln2dDqJXr1/lRPWfjCJGuVTxR78SPZAgoRYDDtIUsN3D4if3F7/cBA==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1287,6 +1293,8 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
+
+  '@gmod/inflate@1.0.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

@@ -131,14 +131,13 @@ off the garbage collector's list (see
 ## Where decompression sits
 
 Decompressing blocks is the one CPU-bound step of the fetch, and the diagram
-gives it the plain grey of an ordinary JS call: blocks go through
-[`pako-esm2`](https://www.npmjs.com/package/pako-esm2). The sibling parsers draw
-that node in wasm orange, where a libdeflate build inflates this file's blocks
-about 4× faster. This package stays on pako anyway, because decompression is
-roughly a fifth of a cold local fetch and a remote one is latency-bound long
-before it is CPU-bound. The bundle cost, and why the platform's own
-`DecompressionStream` loses to both, are in
-[optimizations.md](optimizations.md#measured-but-not-done-a-faster-inflate).
+gives it the wasm orange the sibling parsers use: blocks go through
+[`@gmod/inflate`](https://github.com/GMOD/inflate-js), a libdeflate build that
+lands within about 1.1× of native zlib and 3× ahead of pako. That is worth
+roughly 40% of a whole-genome fetch, since a fetch at that scale touches
+hundreds of blocks. Why not pako, and why not the platform's own
+`DecompressionStream`, are in
+[optimizations.md](optimizations.md#inflate-is-wasm-libdeflate).
 
 There is no worker pool either, so the legend carries no purple. Nothing on this
 path needs the main thread, so a caller who wants the work off it can run the

@@ -16,9 +16,8 @@
 // SYNC: ~/src/gmod/bam-js/docs/img/dataflow.dot — same palette and spine;
 // ~/src/gmod/tabix-js and ~/src/gmod/cram-js share them too. Three deliberate
 // divergences: the two-line labels above (the siblings label with the function
-// name alone), and two legend entries missing rather than restyled, because hic
-// has neither — no orange, since blocks inflate through pako in JS, and no
-// purple, since there is no worker pool. The clusters are what hic adds — cram
+// name alone), and one legend entry missing rather than restyled: no purple,
+// since there is no worker pool. The clusters are what hic adds — cram
 // also uses one, but for what moves to a worker; here they are the two chains a
 // pair runs concurrently, which is the shape of the read path.
 digraph hicjs {
@@ -72,7 +71,8 @@ digraph hicjs {
               fillcolor="#fff8c5" color="#9a6700"]
     readblk  [label=<read the block's bytes<br/><font point-size="8" color="#57606a">readBlock</font>>
               fillcolor="#dafbe1" color="#1a7f37"]
-    unzip    [label=<decompress<br/><font point-size="8" color="#57606a">inflate, pako</font>>]
+    unzip    [label=<decompress<br/><font point-size="8" color="#57606a">@gmod/inflate</font>>
+              fillcolor="#ffd8b5" color="#bc4c00"]
     parse    [label=<decode it into bin, bin, count<br/><font point-size="8" color="#57606a">parseBlockRecords</font>>]
   }
 
@@ -118,7 +118,8 @@ digraph hicjs {
     margin=10
     node [shape=box style="filled,rounded" fontsize=9 margin="0.1,0.04"]
     l1 [label="reads the file" fillcolor="#dafbe1" color="#1a7f37"]
-    l2 [label="cached, shared by every region pair" fillcolor="#fff8c5" color="#9a6700"]
-    l1 -> l2 [style=invis]
+    l2 [label="wasm" fillcolor="#ffd8b5" color="#bc4c00"]
+    l3 [label="cached, shared by every region pair" fillcolor="#fff8c5" color="#9a6700"]
+    l1 -> l2 -> l3 [style=invis]
   }
 }

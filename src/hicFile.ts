@@ -1,5 +1,5 @@
+import { inflateRawUnknownSize } from '@gmod/inflate'
 import { LocalFile } from 'generic-filehandle2'
-import { inflate } from 'pako-esm2'
 
 import { binWindow } from './binWindow.ts'
 import BinaryParser from './binary.ts'
@@ -617,7 +617,14 @@ export class HicFile {
     let block: Block | undefined
     if (idx) {
       const data = await this.file.read(idx.filePosition, idx.size)
-      const plain = inflate(new Uint8Array(data), {}) as Uint8Array
+      // `.subarray(2)` drops the zlib header: libdeflate's raw-deflate path is
+      // the fast one, and a `.hic` records only a block's *compressed* size, so
+      // there is no known output size to hand the exact-size entry point.
+      // `inflateRawUnknownSize` guesses 4x the input, which clears this
+      // format's ~2.3x ratio in one pass.
+      const plain = await inflateRawUnknownSize(
+        new Uint8Array(data).subarray(2),
+      )
       const parser = new BinaryParser(
         new DataView(plain.buffer, plain.byteOffset, plain.byteLength),
       )
