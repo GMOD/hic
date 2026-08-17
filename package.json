@@ -27,6 +27,7 @@
   ],
   "scripts": {
     "test": "vitest",
+    "test:pack": "./scripts/test-pack.sh",
     "clean": "rimraf dist esm",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -36,7 +37,7 @@
     "build:esm": "tsc --outDir esm",
     "build:es5": "tsc --module commonjs --moduleResolution bundler --outDir dist",
     "postbuild:es5": "echo '{\"type\": \"commonjs\"}' > dist/package.json",
-    "preversion": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test --run && pnpm build",
+    "preversion": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test --run && pnpm build && pnpm test:pack",
     "postversion": "git push --follow-tags",
     "build": "pnpm build:esm && pnpm build:es5",
     "coverage": "pnpm test --coverage",
