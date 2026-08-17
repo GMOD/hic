@@ -4,9 +4,13 @@
 
 ```sh
 pnpm install
-pnpm test
+pnpm test --run
 pnpm build
 ```
+
+`pnpm test` on its own is vitest in watch mode, which is what you want while
+editing and not what you want in a script — `--run` is the one-shot form CI and
+`preversion` use.
 
 `test/data/test.hic` is the hg19 v8 file upstream hic-straw ships as its own
 test data. The suites that read it pin real contact counts, so a parse change

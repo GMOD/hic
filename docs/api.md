@@ -2,12 +2,13 @@
 
 ## `new HicFile(config)`
 
-| option       | type                | description                                         |
-| ------------ | ------------------- | --------------------------------------------------- |
-| `filehandle` | `GenericFilehandle` | a `generic-filehandle2` handle (`RemoteFile`, …)    |
-| `path`       | `string`            | a local path, Node only                             |
-| `reader`     | `Reader`            | anything with `read(position, length)`              |
-| `nvi`        | `string`            | `"position,size"` of the normalization vector index |
+| option               | type                | description                                         |
+| -------------------- | ------------------- | --------------------------------------------------- |
+| `filehandle`         | `GenericFilehandle` | a `generic-filehandle2` handle (`RemoteFile`, …)    |
+| `path`               | `string`            | a local path, Node only                             |
+| `reader`             | `Reader`            | anything with `read(position, length)`              |
+| `nvi`                | `string`            | `"position,size"` of the normalization vector index |
+| `blockCacheMaxBytes` | `number`            | block cache memory ceiling, default 128 MB          |
 
 Pass exactly one of `filehandle`, `path` or `reader`. The file reads nothing
 until the first call; every caller that arrives while the header parse is in
@@ -18,6 +19,28 @@ their normalization vector index lives. Without it the parser finds that
 position by walking the expected-value vectors — a chain of small sequential
 reads, paid once per file. A v9 file records the position in its header and
 skips the walk.
+
+### What a file holds in memory
+
+Three caches, all per `HicFile` instance:
+
+| cache        | holds                                           | capacity               |
+| ------------ | ----------------------------------------------- | ---------------------- |
+| block cache  | decompressed contacts, the only large entries   | 1024 entries or 128 MB |
+| matrix cache | one block index per chromosome pair             | 512 entries            |
+| norm vector  | one vector slice per (type, chr, unit, binsize) | 64 entries             |
+
+`blockCacheMaxBytes` sets that 128 MB ceiling, and it is the only capacity a
+caller can change, because it is the only one bounding memory rather than a
+working set. The two entry caps come from how many region pairs a fetch runs at
+once — 24 chromosomes is 300 pairs — which the library knows and a caller would
+only have to rederive. [dataflow.md](dataflow.md#why-so-much-of-it-is-yellow)
+explains what the sharing buys.
+
+Lower the ceiling where memory is tighter than bandwidth; raising it buys
+nothing once a fetch's working set fits, since the entry cap bounds the cache
+too. A block larger than the whole budget still stays cached — a cache that
+cannot hold what the caller just asked for would answer nobody.
 
 ## `getMetaData(): Promise<HicMetadata>`
 
@@ -51,6 +74,11 @@ The main read. `region1` is the x axis and `region2` the y axis; a region is
 The three arrays are parallel and always exactly the same length —
 `bin1.length` is the record count. Bin indices are absolute for their
 chromosome: multiply by `binsize` for a genomic coordinate.
+
+Record **order is unspecified**. The result concatenates whole blocks, and a
+fetch emits the blocks it already had cached before the ones it just read, so
+the same query can answer with the same contacts in a different order. Sort if
+you need one.
 
 The result covers every bin **overlapping** the requested region, edge-
 straddling ones included, so a region narrower than one bin still comes back
@@ -88,8 +116,13 @@ normalization vector index, so the first call may read.
 ## Lower-level
 
 These are public because they are useful, not because they are the intended
-entry point: `getMatrix`, `getBlocks`, `readBlock`, `getNormalizationVector`,
-`getNormVectorIndex`, `getFileChrName`.
+entry point: `init`, `getMatrix`, `getBlocks`, `readBlock`,
+`getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`.
+
+`init` parses the header and footer and is idempotent, so a caller that knows a
+fetch is coming can pay that round trip early; every other method awaits it
+anyway. Everything else on `HicFile` — the header walk, the footer parse, the
+norm-vector-index discovery — is `private`, so this list is the whole surface.
 
 ## Exported types
 

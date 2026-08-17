@@ -138,6 +138,11 @@ than an order of magnitude with binsize and distance from the diagonal (0.05 MB
 at 2.5 Mb, 0.23 MB at 100 kb on the test file). Now the entry cap tracks the
 working set and `maxBytes` is the memory backstop it was standing in for.
 
+Splitting them is also what makes one of the two safe to expose. `maxBytes` is
+the `blockCacheMaxBytes` config option, since a caller knows its own memory
+budget; the entry caps stay internal because they follow from the region-pair
+count rather than from anything the caller can see.
+
 ### Caches hold the in-flight promise, not the resolved value
 
 Region pairs run concurrently and share chromosomes, so a result-only cache had

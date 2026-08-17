@@ -51,6 +51,13 @@ export interface HicConfig {
    * costs on a pre-v9 file.
    */
   nvi?: string
+  /**
+   * Ceiling on the decompressed contacts the block cache holds, in bytes.
+   * Defaults to 128 MB. Lower it where the budget is tight and re-reading is
+   * cheaper than the memory; raising it buys nothing once a fetch's working set
+   * fits, since the entry cap bounds the cache too.
+   */
+  blockCacheMaxBytes?: number
 }
 
 // Cached blocks are the decompressed records and nothing else. hic-straw also
@@ -112,6 +119,11 @@ const BLOCK_CACHE_MAX_ENTRIES = 1024
 // binsize. Measured on the file above: 0.05 MB at 2.5 Mb, 0.23 MB at 100 kb. So
 // the entry cap now tracks the working set and this tracks the memory, instead
 // of one number answering both badly. See LRU's WeightOpts.
+//
+// This is the one capacity here a caller can override (`blockCacheMaxBytes`),
+// because it is the only one that bounds MEMORY. The two entry caps below are
+// working-set sizes derived from how many region pairs a fetch runs at once,
+// which the library knows and the caller would only have to rederive.
 const BLOCK_CACHE_MAX_BYTES = 128 * 1024 * 1024
 // One entry per (chrIdx1, chrIdx2), so the working set is the pair count.
 // 512 covers a 31-region view; human whole-genome is 300. A matrix holds the
@@ -159,10 +171,9 @@ export class HicFile {
   private matrixCache = new LRU<string, Promise<Matrix | undefined>>(
     MATRIX_CACHE_SIZE,
   )
-  private blockCache = new LRU<string, Block>(BLOCK_CACHE_MAX_ENTRIES, {
-    maxBytes: BLOCK_CACHE_MAX_BYTES,
-    weigh: blockCacheWeight,
-  })
+  // Assigned in the constructor rather than here, since its byte budget is
+  // configurable and a field initializer cannot see `config`.
+  private blockCache: LRU<string, Block>
   private normVectorIndexPosition = -1
   private normVectorIndexSize = -1
 
@@ -185,8 +196,12 @@ export class HicFile {
   private meta: HicMetadata | undefined
 
   constructor(config: HicConfig) {
-    const { filehandle, path, reader } = config
+    const { filehandle, path, reader, blockCacheMaxBytes } = config
     this.config = config
+    this.blockCache = new LRU<string, Block>(BLOCK_CACHE_MAX_ENTRIES, {
+      maxBytes: blockCacheMaxBytes ?? BLOCK_CACHE_MAX_BYTES,
+      weigh: blockCacheWeight,
+    })
     if (reader) {
       this.file = reader
     } else if (filehandle) {
@@ -215,7 +230,7 @@ export class HicFile {
     return this.meta!
   }
 
-  async readHeaderAndFooter() {
+  private async readHeaderAndFooter() {
     // `init` clears its memoized promise on failure so a transient read error
     // retries, and this parse appends as it goes — so a retry has to start from
     // empty or a failure part-way through the chromosome loop leaves the second
@@ -301,7 +316,7 @@ export class HicFile {
     }
   }
 
-  async readFooter() {
+  private async readFooter() {
     const skip = this.version < 9 ? 8 : 12
     let data = await this.file.read(this.footerPosition, skip)
 
@@ -347,7 +362,7 @@ export class HicFile {
     return p
   }
 
-  async readMatrix(chrIdx1: number, chrIdx2: number) {
+  private async readMatrix(chrIdx1: number, chrIdx2: number) {
     await this.init()
 
     const idx = this.masterIndex[Matrix.getKey(chrIdx1, chrIdx2)]
@@ -819,7 +834,7 @@ export class HicFile {
     return this.normalizationTypes
   }
 
-  async readNormVectorIndex(range: { start: number; size: number }) {
+  private async readNormVectorIndex(range: { start: number; size: number }) {
     await this.init()
     const data = await this.file.read(range.start, range.size)
     const binaryParser = new BinaryParser(new DataView(data))
@@ -833,7 +848,7 @@ export class HicFile {
 
   // Used when the position of the norm vector index is unknown: read through
   // the expected values to find the index.
-  async readNormExpectedValuesAndNormVectorIndex() {
+  private async readNormExpectedValuesAndNormVectorIndex() {
     await this.init()
     if (this.normExpectedValueVectorsPosition !== undefined) {
       const nviStart = await this.skipExpectedValues(
@@ -875,7 +890,7 @@ export class HicFile {
 
   // Used when the position of the norm vector index is unknown: skip the
   // normalized expected values to find the index.
-  async skipExpectedValues(start: number) {
+  private async skipExpectedValues(start: number) {
     const version = this.version
     const file = new BufferedFile({ file: this.file, size: 256000 })
     const data = await file.read(start, INT)
@@ -921,7 +936,7 @@ export class HicFile {
     return nEntries === 0 ? start + INT : parseNext(start + INT, nEntries)
   }
 
-  parseNormVectorEntry(binaryParser: BinaryParser) {
+  private parseNormVectorEntry(binaryParser: BinaryParser) {
     const type = binaryParser.getString() // 15
     const chrIdx = binaryParser.getInt() // 4
     const unit = binaryParser.getString() // 3
