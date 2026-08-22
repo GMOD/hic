@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { openTestHic } from './testFile.ts'
+import { openTestHicInMemory } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
 
 import type { HicRegion, Reader } from '../src/index.ts'
@@ -61,7 +61,7 @@ const region = (chr: string): HicRegion => ({ chr, start: 0, end: 20_000_000 })
  * after the first one has. Measuring from cold would fold the one-time header
  * walk into every number. */
 async function warmFile() {
-  const file = batchingReader(openTestHic())
+  const file = batchingReader(await openTestHicInMemory())
   const hic = new HicFile({ reader: file })
   await hic.getMetaData()
   await hic.getNormalizationOptions()
@@ -107,7 +107,7 @@ test.each([
 })
 
 test('a cold open pays the header walk once, not per pair', async () => {
-  const file = batchingReader(openTestHic())
+  const file = batchingReader(await openTestHicInMemory())
   const hic = new HicFile({ reader: file })
   const r = region('1')
   await hic.getContactRecords('KR', r, r, 'BP', RES)
