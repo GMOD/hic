@@ -7,6 +7,8 @@ export type {
   Chromosome,
   HicMetadata,
   HicRegion,
+  ProgressCallback,
+  ProgressOpts,
   Reader,
   Zoom,
 } from './types.ts'

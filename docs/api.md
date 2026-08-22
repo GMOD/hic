@@ -53,11 +53,12 @@ cannot hold what the caller just asked for would answer nobody.
 }
 ```
 
-## `getContactRecords(normalization, region1, region2, units, binsize)`
+## `getContactRecords(normalization, region1, region2, units, binsize, opts?)`
 
 The main read. `region1` is the x axis and `region2` the y axis; a region is
 `{ chr, start, end }` with 0-based half-open coordinates. `units` is `'BP'`.
-`normalization` is one of `getNormalizationOptions()`, or `'NONE'`.
+`normalization` is one of `getNormalizationOptions()`, or `'NONE'`. `opts` is
+`{ onProgress }` — see [Progress](#progress).
 
 ```ts
 {
@@ -107,17 +108,51 @@ string.
 A chromosome pair with no matrix at all — plenty of files store no
 inter-chromosomal maps — returns no records instead of throwing.
 
-## `getNormalizationOptions(): Promise<string[]>`
+## `getNormalizationOptions(opts?): Promise<string[]>`
 
 The normalization types this file carries, always starting with `'NONE'`, e.g.
 `['NONE', 'VC', 'VC_SQRT', 'KR', 'SCALE']`. The list falls out of loading the
-normalization vector index, so the first call may read.
+normalization vector index, so the first call may read. `opts` is
+`{ onProgress }` — see [Progress](#progress).
+
+## Progress
+
+Both reading methods take an optional trailing `{ onProgress }`, called as
+`(current, total)` with `current` 0 before the phase starts and once more as
+each unit lands. The unit differs by phase and a caller does not need to know
+which — render `current / total`.
+
+```ts
+await hic.getContactRecords('KR', region, region, 'BP', 100_000, {
+  onProgress: (current, total) => {
+    setLabel(`Downloading contacts ${Math.round((current / total) * 100)}%`)
+  },
+})
+```
+
+For `getContactRecords` (and `getBlocks`, which it calls) the unit is the
+**block**. `total` is every block the query covers, and blocks already in the
+cache are counted as done before the first read goes out — so a pan that reuses
+most of its blocks starts most of the way along rather than at zero.
+
+For `getNormalizationOptions` the unit is the **expected-value chunk**, and the
+ticks come from the walk that locates the normalization vector index on a
+pre-v9 file. That walk is two round trips per chunk which no buffer can merge,
+and it is the slowest part of opening such a file — which is the phase this
+exists for. A file that records the index position (v9), or one opened with
+`nvi`, does no walk and reports nothing.
+
+The walk also runs only once per file, so it is reported to the call that
+performs it. A later call joining a load that is already finished or in flight
+is not waiting on reads and is told nothing.
 
 ## Lower-level
 
 These are public because they are useful, not because they are the intended
 entry point: `init`, `getMatrix`, `getBlocks`, `readBlock`,
-`getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`.
+`getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`. `getBlocks`
+and `getNormVectorIndex` take the same optional `{ onProgress }` as the two
+methods above.
 
 `init` parses the header and footer and is idempotent, so a caller that knows a
 fetch is coming can pay that round trip early; every other method awaits it
@@ -127,7 +162,7 @@ norm-vector-index discovery — is `private`, so this list is the whole surface.
 ## Exported types
 
 `HicConfig`, `HicMetadata`, `HicRegion`, `Chromosome`, `Zoom`,
-`ContactRecords`, `Reader`.
+`ContactRecords`, `Reader`, `ProgressCallback`, `ProgressOpts`.
 
 ## `readerFromFilehandle(filehandle): Reader`
 

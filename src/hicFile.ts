@@ -16,6 +16,8 @@ import type {
   Chromosome,
   HicMetadata,
   HicRegion,
+  ProgressCallback,
+  ProgressOpts,
   Reader,
 } from './types.ts'
 import type { GenericFilehandle } from 'generic-filehandle2'
@@ -380,6 +382,7 @@ export class HicFile {
     region2: HicRegion,
     units: string,
     binsize: number,
+    opts?: ProgressOpts,
   ) {
     await this.init()
 
@@ -425,7 +428,10 @@ export class HicFile {
     // offset its values start at.
     const [norm, blocks] = await Promise.all([
       this.getNormVectors(normalization, r1, r2, units, binsize),
-      this.getBlocks(r1, r2, binsize),
+      // The measurable half of the pair: blocks are counted and the two norm
+      // vectors are not, because the vector chain is two hops whatever the
+      // query and the block chain is the one that grows with the region.
+      this.getBlocks(r1, r2, binsize, opts),
     ])
 
     // Sum of the blocks' record counts bounds the survivors, so the output is
@@ -555,7 +561,12 @@ export class HicFile {
     return result
   }
 
-  async getBlocks(region1: HicRegion, region2: HicRegion, binSize: number) {
+  async getBlocks(
+    region1: HicRegion,
+    region2: HicRegion,
+    binSize: number,
+    opts?: ProgressOpts,
+  ) {
     const blockKey = (blockNumber: number, zd: MatrixZoomData) =>
       `${zd.getKey()}_${blockNumber}`
 
@@ -595,10 +606,28 @@ export class HicFile {
           }
         }
 
+        // Cached blocks are already done, not absent: a pan that reuses most
+        // of its blocks reads most of the way along rather than restarting at
+        // zero, which is what the bar should say — the work left is the reads.
+        //
+        // A query covering no blocks at all reports nothing rather than `0, 0`:
+        // there is no fraction in it, and a caller dividing would get NaN.
+        const { onProgress } = opts ?? {}
+        let done = blocks.length
+        if (blockNumbers.length > 0) {
+          onProgress?.(done, blockNumbers.length)
+        }
+        // Still one `Promise.all`, so every block is still issued in one wave:
+        // what a remote file pays is round-trip DEPTH, and counting the
+        // completions must not turn one wave into a queue. `readChainDepth`
+        // pins that.
         const newBlocks = await Promise.all(
-          blockNumbersToQuery.map(blockNumber =>
-            this.readBlock(blockNumber, zd),
-          ),
+          blockNumbersToQuery.map(async blockNumber => {
+            const block = await this.readBlock(blockNumber, zd)
+            done++
+            onProgress?.(done, blockNumbers.length)
+            return block
+          }),
         )
         for (const block of newBlocks) {
           if (block) {
@@ -778,7 +807,7 @@ export class HicFile {
     return new NormalizationVector(this.file, filePosition, nValues, dataType)
   }
 
-  async getNormVectorIndex() {
+  async getNormVectorIndex(opts?: ProgressOpts) {
     // Before the version gate, not after it: `version` is 0 until the header is
     // parsed, so calling this first — which `getNormalizationOptions` on its own
     // does — answered "no index" for every file rather than for a v5 one. A
@@ -793,18 +822,21 @@ export class HicFile {
       // sequential range reads, only to rediscover there is nothing there.
       // Cleared on failure (like `init`) so a transient read error retries
       // rather than caching a rejection forever.
-      this.normVectorIndexP ??= this.loadNormVectorIndex().catch(
-        (e: unknown) => {
-          this.normVectorIndexP = undefined
-          throw e
-        },
-      )
+      // The walk runs once, so its progress belongs to the call that performs
+      // it: a caller joining an in-flight or finished load is not waiting on
+      // reads and is told nothing, which is the truth rather than a silence.
+      this.normVectorIndexP ??= this.loadNormVectorIndex(
+        opts?.onProgress,
+      ).catch((e: unknown) => {
+        this.normVectorIndexP = undefined
+        throw e
+      })
       await this.normVectorIndexP
     }
     return this.normVectorIndex
   }
 
-  private async loadNormVectorIndex() {
+  private async loadNormVectorIndex(onProgress?: ProgressCallback) {
     // If we know the position of the norm vector index, read it directly.
     // This is the case for hic v9 files.
     if (this.normVectorIndexPosition > 0 && this.normVectorIndexSize > 0) {
@@ -820,7 +852,7 @@ export class HicFile {
       })
     } else {
       try {
-        await this.readNormExpectedValuesAndNormVectorIndex()
+        await this.readNormExpectedValuesAndNormVectorIndex(onProgress)
       } catch (e) {
         // Not "expected if the file has no norm vectors" — that case never
         // arrives here. hic-straw's own IO threw a 416 for a read past EOF and
@@ -834,10 +866,10 @@ export class HicFile {
     }
   }
 
-  async getNormalizationOptions() {
+  async getNormalizationOptions(opts?: ProgressOpts) {
     // Normalization options are computed as a side effect of loading the
     // index. A bit ugly but alternatives are worse.
-    await this.getNormVectorIndex()
+    await this.getNormVectorIndex(opts)
     return this.normalizationTypes
   }
 
@@ -855,11 +887,14 @@ export class HicFile {
 
   // Used when the position of the norm vector index is unknown: read through
   // the expected values to find the index.
-  private async readNormExpectedValuesAndNormVectorIndex() {
+  private async readNormExpectedValuesAndNormVectorIndex(
+    onProgress?: ProgressCallback,
+  ) {
     await this.init()
     if (this.normExpectedValueVectorsPosition !== undefined) {
       const nviStart = await this.skipExpectedValues(
         this.normExpectedValueVectorsPosition,
+        onProgress,
       )
       let byteCount = INT
 
@@ -897,7 +932,10 @@ export class HicFile {
 
   // Used when the position of the norm vector index is unknown: skip the
   // normalized expected values to find the index.
-  private async skipExpectedValues(start: number) {
+  private async skipExpectedValues(
+    start: number,
+    onProgress?: ProgressCallback,
+  ) {
     const version = this.version
     const file = new BufferedFile({ file: this.file, size: 256000 })
     const data = await file.read(start, INT)
@@ -914,12 +952,17 @@ export class HicFile {
     const binaryParser = new BinaryParser(new DataView(data))
     const nEntries = binaryParser.getInt() // Total # of expected value chunks
 
-    const parseNext = async (
-      chunkStart: number,
-      remaining: number,
-    ): Promise<number> => {
+    // Skip one chunk, answering where the next one starts.
+    //
+    // Its two reads land a whole expected-value vector apart — one per bin of
+    // the genome, so tens of MB at a fine binsize — which is further than the
+    // buffer reaches. On a remote file that is two round trips per chunk that
+    // nothing can merge, and it is why this walk, not the index it is looking
+    // for, is the slow part of opening a pre-v9 file. It is also why the chunk
+    // is the unit worth counting: `nEntries` of them, known before the first
+    // read, each costing about the same.
+    const skipChunk = async (chunkStart: number) => {
       let chunkSize = 0
-      const p0 = chunkStart
 
       let buf = await file.read(chunkStart, 500)
       let parser = new BinaryParser(new DataView(buf))
@@ -935,12 +978,23 @@ export class HicFile {
       chunkSize +=
         INT + nChrScaleFactors * (INT + (version < 9 ? DOUBLE : FLOAT))
 
-      return remaining - 1 === 0
-        ? p0 + chunkSize
-        : parseNext(p0 + chunkSize, remaining - 1)
+      return chunkStart + chunkSize
     }
 
-    return nEntries === 0 ? start + INT : parseNext(start + INT, nEntries)
+    // A loop rather than the tail recursion this was, because the position is
+    // the only thing carried between chunks and a counter now rides along with
+    // it. Chunks must be walked in order — each one's size is only known once
+    // the one before it has been parsed — so the awaits are sequential by
+    // nature, not by oversight.
+    if (nEntries > 0) {
+      onProgress?.(0, nEntries)
+    }
+    let position = start + INT
+    for (let done = 0; done < nEntries; done++) {
+      position = await skipChunk(position)
+      onProgress?.(done + 1, nEntries)
+    }
+    return position
   }
 
   private parseNormVectorEntry(binaryParser: BinaryParser) {
