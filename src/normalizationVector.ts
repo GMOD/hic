@@ -33,11 +33,27 @@ export default class NormalizationVector {
     // forever, and every call re-reads the same range from the file.
     const wanted = Math.min(end, this.nValues)
     if (!this.cache || start < this.cache.start || wanted > this.cache.end) {
-      const adjustedStart = Math.max(0, start - 1000)
       const adjustedEnd = Math.min(this.nValues, end + 1000)
+      // Clamped against `adjustedEnd`, and not merely against zero, or a window
+      // starting past the vector produces a NEGATIVE `n` — and a negative read
+      // length reaches the reader as `new Uint8Array(-8)`, a RangeError that
+      // fails the whole fetch instead of the empty answer the caller below
+      // already handles. The padding is what sets how far past is far enough:
+      // more than 1000 bins, which at a fine binsize is not far at all.
+      //
+      // Reachable exactly where the comment above says: the assembly's refseq
+      // is longer than the size the `.hic` recorded for that chromosome, so a
+      // view of the tail of it asks for bins the vector never had.
+      const adjustedStart = Math.min(Math.max(0, start - 1000), adjustedEnd)
       const startPosition = this.filePosition + adjustedStart * this.dataType
       const n = adjustedEnd - adjustedStart
-      const data = await this.file.read(startPosition, n * this.dataType)
+      // Nothing to read when the window is entirely past the vector, and on a
+      // remote file a zero-length range request is still a round trip — one per
+      // region pair, on every fetch, for as long as the view stays there.
+      const data =
+        n > 0
+          ? await this.file.read(startPosition, n * this.dataType)
+          : new ArrayBuffer(0)
       const parser = new BinaryParser(new DataView(data))
       const values = new Float64Array(n)
       for (let i = 0; i < n; i++) {
