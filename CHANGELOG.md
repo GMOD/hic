@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/GMOD/hic/compare/v1.1.0...v1.2.0) (2026-08-22)
+
+### Features
+
+- Report progress from block reads and the normalization-index walk ([07226f5](https://github.com/GMOD/hic/commit/07226f5aef413b9fef516c36ee4a4ef5c49f7ba3))
+
 ## [1.1.0](https://github.com/GMOD/hic/compare/...v1.1.0) (2026-08-17)
 
 ### Documentation
