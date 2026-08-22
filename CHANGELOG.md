@@ -1,3 +1,13 @@
+## [1.2.1](https://github.com/GMOD/hic/compare/v1.2.0...v1.2.1) (2026-08-22)
+
+### Bug Fixes
+
+- A region past the end of a chromosome no longer reads a negative length ([680521a](https://github.com/GMOD/hic/commit/680521a39affffc09bb536bac18d4901df30cc41))
+
+### Tests
+
+- Measure read depth off an in-memory fixture, not the page cache ([0cb00b4](https://github.com/GMOD/hic/commit/0cb00b4e67c64ab626a632d8826c4571d054b92f))
+
 ## [1.2.0](https://github.com/GMOD/hic/compare/v1.1.0...v1.2.0) (2026-08-22)
 
 ### Features
