@@ -100,9 +100,11 @@ cold, medians in ms:
 the fetch. Still latency-bound first on a remote fetch — this is the local
 ceiling, not the end-to-end win.
 
-`DecompressionStream`: rejected. Each block is its own zlib stream, so its
-per-call overhead is paid once per block — 3–7x native zlib, worse than wasm
-throughout and worse than pako at small block sizes.
+### Not `DecompressionStream` either
+
+Rejected: each block is its own zlib stream, so its per-call overhead is paid
+once per block — 3–7x native zlib, worse than wasm throughout and worse than
+pako at small block sizes.
 
 ## What hic-straw logged, this returns
 
