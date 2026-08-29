@@ -53,7 +53,7 @@ digraph hicjs {
   }
 
   filter [label="filter + normalize"]
-  out    [label="ContactRecords" fillcolor="#ddf4ff" color="#0969da"]
+  out    [label="ContactRecords\n{ bin1: Int32Array, bin2: Int32Array, counts: Float32Array }" fillcolor="#ddf4ff" color="#0969da"]
 
   query -> init
   init  -> win
