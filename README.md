@@ -8,8 +8,8 @@ Read `.hic` contact matrix files, in Node.js or the browser.
 A fork of [hic-straw](https://github.com/aidenlab/hic-straw), rewritten in
 TypeScript and retuned for a genome browser's access pattern — many region
 pairs per fetch, arbitrary viewport windows, and contacts handed to a GPU
-renderer. See [docs/optimizations.md](docs/optimizations.md) for what changed
-and why.
+renderer. See [docs/optimizations.md](docs/optimizations.md) and
+[docs/correctness.md](docs/correctness.md) for what changed and why.
 
 ## Install
 
@@ -113,8 +113,10 @@ See [docs/api.md](docs/api.md) for the full API reference.
 - [docs/api.md](docs/api.md) — every constructor option, method and return shape
 - [docs/dataflow.md](docs/dataflow.md) — how a fetch flows, and why the path
   forks into two chains
-- [docs/optimizations.md](docs/optimizations.md) — what this fork changed
-  against hic-straw, and what measured it
+- [docs/optimizations.md](docs/optimizations.md) — performance against
+  hic-straw, and what measured it
+- [docs/correctness.md](docs/correctness.md) — parsing differences from
+  hic-straw
 - [CONTRIBUTING.md](CONTRIBUTING.md) — development and release steps
 
 ## Academic use

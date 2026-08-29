@@ -86,7 +86,7 @@ Two properties of those caches matter beyond the color. Each holds the
 otherwise all miss while the first is still reading. And their capacities are
 sized against the pair count rather than against one region — sized for one
 region they invert, evicting the entries the same fetch is about to want again.
-[optimizations.md](optimizations.md#caches-are-sized-against-the-region-pair-working-set)
+[optimizations.md](optimizations.md#caches-sized-to-the-region-pair-working-set)
 has the read counts.
 
 `normVectorCache` is the one whose hit does not reach the filter directly. It
@@ -97,8 +97,7 @@ region's slice of it.
 
 ## Why a whole-genome view is affordable
 
-Every chromosome against every other chromosome sounds like the expensive case,
-and four separate things keep it from being one.
+Four things keep an all-by-all view affordable.
 
 **The file already did the hard part.** A whole-genome view lands on the
 coarsest zoom level, and hg19 at 2.5 Mb bins is about 1,240 bins per axis — call
@@ -132,9 +131,9 @@ off the garbage collector's list (see
 
 Decompressing blocks is the one CPU-bound step of the fetch, and the diagram
 gives it the wasm orange the sibling parsers use: blocks go through
-[`@gmod/inflate`](https://github.com/GMOD/inflate-js), a libdeflate build that
-lands within about 1.1× of native zlib and 3× ahead of pako. That is worth
-roughly 40% of a whole-genome fetch, since a fetch at that scale touches
+[`@gmod/inflate`](https://github.com/GMOD/inflate-js), a wasm libdeflate build
+that replaced the pure-JS pako this package shipped through v1.0.0. That is
+worth roughly 40% of a whole-genome fetch, since a fetch at that scale touches
 hundreds of blocks. Why not pako, and why not the platform's own
 `DecompressionStream`, are in
 [optimizations.md](optimizations.md#inflate-is-wasm-libdeflate).
