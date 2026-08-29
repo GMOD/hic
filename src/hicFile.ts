@@ -808,10 +808,9 @@ export class HicFile {
   }
 
   async getNormVectorIndex(opts?: ProgressOpts) {
-    // Before the version gate, not after it: `version` is 0 until the header is
-    // parsed, so calling this first — which `getNormalizationOptions` on its own
-    // does — answered "no index" for every file rather than for a v5 one. A
-    // caller that reads metadata first never sees it.
+    // await init() before the version gate, not after: this class defaults
+    // `version` to 0, so checking it before the header is parsed would answer
+    // "no index" for every file rather than for a v5 one.
     await this.init()
     if (this.version >= 6) {
       // Memoize the *attempt*, not just a populated result. A legal (if
