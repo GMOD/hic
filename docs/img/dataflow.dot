@@ -10,8 +10,8 @@
 //
 // SYNC: ~/src/gmod/bam-js/docs/img/dataflow.dot — same palette, legend and
 // spine; ~/src/gmod/tabix-js and ~/src/gmod/cram-js share them too. hic's own
-// addition is the two clusters: the normalization chain and the block chain,
-// the two a region pair walks concurrently.
+// addition is the two clusters: the normalization lookup and the block
+// lookup, the two paths a region pair runs concurrently.
 digraph hicjs {
   rankdir=TB
   newrank=true
@@ -27,7 +27,7 @@ digraph hicjs {
   win   [label="binWindow"]
 
   subgraph cluster_norm {
-    label="normalization chain"
+    label="normalization lookup"
     labeljust="l"
     fontname="Helvetica" fontsize=9 fontcolor="#57606a" color="#d0d7de"
     style="rounded,dashed"
@@ -38,7 +38,7 @@ digraph hicjs {
   }
 
   subgraph cluster_blocks {
-    label="block chain"
+    label="block lookup"
     labeljust="l"
     fontname="Helvetica" fontsize=9 fontcolor="#57606a" color="#d0d7de"
     style="rounded,dashed"

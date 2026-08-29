@@ -30,9 +30,9 @@ contacts join each pair of positions?
 code underneath it.
 
 `getContactRecords` parses the header once, turns the regions into bin
-windows, then runs two independent chains — normalization vectors, blocks —
-that meet in a filter keeping in-window contacts and dividing each by both
-normalization values.
+windows, then runs the normalization-vector lookup and the block lookup
+concurrently, meeting in a filter that keeps in-window contacts and divides
+each by both normalization values.
 
 Not drawn: the pre-v9 norm-vector-index walk, `parseBlockRecords`'s three
 block encodings, and per-version field-width differences. `NONE` skips
@@ -40,11 +40,11 @@ normalization and returns raw counts.
 
 ## Why the path forks
 
-The two chains share nothing, so they run concurrently rather than
-sequentially; a pair's missing blocks go out in one `Promise.all`. The fork
-is per region pair, and a caller usually issues many at once — a
-whole-genome human view is 24 regions, 300 pairs, all concurrent. What that
-buys in round trips: [optimizations.md](optimizations.md).
+Each lookup depends only on its own inputs, so a fetch runs both
+concurrently: a pair's missing vectors and blocks go out together in one
+`Promise.all`. The fork is per region pair, and a caller usually issues many
+at once — a whole-genome human view is 24 regions, 300 pairs, all
+concurrent. What that buys in round trips: [optimizations.md](optimizations.md).
 
 ## Why so much of it is yellow
 
@@ -54,9 +54,9 @@ pair's matrix, once regardless of block count. The caching strategy behind
 that, and its numbers, are in
 [optimizations.md](optimizations.md#caches-sized-to-the-region-pair-working-set).
 
-`normVectorCache` holds the vector, not its values, so a hit still asks for
-its region's slice — answered by `NormalizationVector`'s own ±1000-value
-cache without a read, since pairs sharing a vector want the same slice.
+`normVectorCache` holds the parsed vector itself, so a hit still asks it
+for the region's slice — usually already sitting in `NormalizationVector`'s
+own ±1000-value cache, since pairs sharing a vector ask for the same slice.
 
 ## Why a whole-genome view is affordable
 
@@ -66,11 +66,12 @@ cache without a read, since pairs sharing a vector want the same slice.
 - **Only overlapping tiles get read.** Indexed blocks mean a pair reads only
   the tiles its bin square touches; many files carry no inter-chromosomal
   matrices at all, so those pairs cost one lookup and nothing else.
-- **Work is shared, not repeated per pair.** 24 regions need 24
-  normalization vectors, not 600. `test/data/test.hic`'s whole-genome fetch:
+- **Work is shared across every pair.** 24 regions share 24 normalization
+  vectors across all 300 pairs. `test/data/test.hic`'s whole-genome fetch:
   648 range reads cold, 0 on repeat.
 
-Contacts come back as three parallel typed arrays, not objects
+Contacts come back as three parallel typed arrays — `bin1`, `bin2`,
+`counts` — each sized to the record count
 ([optimizations.md](optimizations.md#contacts-are-struct-of-arrays)).
 
 ## Where decompression sits
@@ -79,5 +80,5 @@ The one CPU-bound step — the wasm-orange nodes the sibling parsers use.
 What it costs, and why wasm over pako or `DecompressionStream`, is in
 [optimizations.md](optimizations.md#inflate-is-wasm-libdeflate).
 
-No worker pool. Nothing on this path needs the main thread, so a caller who
-wants the work off it can run the whole diagram in one of its own.
+Every step here is thread-agnostic, so a caller who wants the work off the
+main thread can run the whole diagram inside a worker of its own.

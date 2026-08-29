@@ -12,12 +12,12 @@
 <g id="clust1" class="cluster">
 <title>cluster_norm</title>
 <path fill="white" stroke="#d0d7de" stroke-dasharray="5,2" d="M41.96,-372.75C41.96,-372.75 135.96,-372.75 135.96,-372.75 141.96,-372.75 147.96,-378.75 147.96,-384.75 147.96,-384.75 147.96,-546.5 147.96,-546.5 147.96,-552.5 141.96,-558.5 135.96,-558.5 135.96,-558.5 41.96,-558.5 41.96,-558.5 35.96,-558.5 29.96,-552.5 29.96,-546.5 29.96,-546.5 29.96,-384.75 29.96,-384.75 29.96,-378.75 35.96,-372.75 41.96,-372.75"/>
-<text xml:space="preserve" text-anchor="middle" x="78.08" y="-545.95" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#57606a">normalization chain</text>
+<text xml:space="preserve" text-anchor="middle" x="80.71" y="-545.95" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#57606a">normalization lookup</text>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_blocks</title>
 <path fill="white" stroke="#d0d7de" stroke-dasharray="5,2" d="M170.96,-121C170.96,-121 272.96,-121 272.96,-121 278.96,-121 284.96,-127 284.96,-133 284.96,-133 284.96,-546.5 284.96,-546.5 284.96,-552.5 278.96,-558.5 272.96,-558.5 272.96,-558.5 170.96,-558.5 170.96,-558.5 164.96,-558.5 158.96,-552.5 158.96,-546.5 158.96,-546.5 158.96,-133 158.96,-133 158.96,-127 164.96,-121 170.96,-121"/>
-<text xml:space="preserve" text-anchor="middle" x="190.21" y="-545.95" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#57606a">block chain</text>
+<text xml:space="preserve" text-anchor="middle" x="192.83" y="-545.95" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#57606a">block lookup</text>
 </g>
 <g id="clust4" class="cluster">
 <title>cluster_legend</title>
