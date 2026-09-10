@@ -8,10 +8,24 @@
 // dataflow.md defines the `.hic` vocabulary — matrix, block, vector — above
 // the diagram.
 //
-// SYNC: ~/src/gmod/bam-js/docs/img/dataflow.dot — same palette, legend and
-// spine; ~/src/gmod/tabix-js and ~/src/gmod/cram-js share them too. hic's own
-// addition is the two clusters: the normalization lookup and the block
-// lookup, the two paths a region pair runs concurrently.
+// Every label says what the step DOES first and names the code second, in the
+// small grey line under it. The audience arriving at a dataflow picture is
+// usually meeting `.hic` vocabulary for the first time — matrix, block, vector —
+// and a spine of bare function names asks them to know the code before the
+// picture can teach them anything. dataflow.md defines those three words just
+// above the diagram.
+//
+// SYNC: ~/src/gmod/bam-js/docs/img/dataflow.dot — same palette and spine;
+// ~/src/gmod/tabix-js and ~/src/gmod/cram-js share them too. Three deliberate
+// divergences: the two-line labels above (the siblings label with the function
+// name alone), and one legend entry missing rather than restyled: no purple,
+// since there is no worker pool. The clusters are what hic adds — cram
+// also uses one, but for what moves to a worker; here they are the two chains a
+// pair runs concurrently, which is the shape of the read path.
+// ~/src/gmod/gbz-base-js/docs/img/dataflow.dot is the fifth, and drops two
+// legend entries rather than restyling them: nothing there is wasm and nothing
+// leaves the main thread. Its cluster is the storage layer every I/O step reads
+// through, drawn connected to nothing — the edges to it buried the spine.
 digraph hicjs {
   rankdir=TB
   newrank=true
