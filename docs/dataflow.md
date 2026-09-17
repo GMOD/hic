@@ -19,7 +19,7 @@ contacts join each pair of positions?
   sequence composition) along one chromosome — uncorrected, a well-covered
   bin reads as a bright stripe across the matrix. Normalized count = raw
   count / (`v1[bin1] * v2[bin2]`). `KR`, `VC`, `SCALE` are different
-  recipes; a file may carry several, or none.
+  normalization methods; a file may carry several, or none.
 
 ## The path
 
@@ -44,7 +44,8 @@ Each lookup depends only on its own inputs, so a fetch runs both
 concurrently: a pair's missing vectors and blocks go out together in one
 `Promise.all`. The fork is per region pair, and a caller usually issues many
 at once — a whole-genome human view is 24 regions, 300 pairs, all
-concurrent. What that buys in round trips: [optimizations.md](optimizations.md).
+concurrent. See [optimizations.md](optimizations.md) for what that saves in
+round trips.
 
 ## Why so much of it is yellow
 
@@ -60,13 +61,13 @@ own ±1000-value cache, since pairs sharing a vector ask for the same slice.
 
 ## Why a whole-genome view is affordable
 
-- **The file already did the hard part.** Coarsest zoom level: hg19 at
+- Coarser zoom levels are pre-binned in the file. Coarsest zoom level: hg19 at
   2.5 Mb is ~1,240 bins per axis, ~800,000 mostly-empty half-matrix cells —
   against 620,000 bins per axis at 5 kb.
-- **Only overlapping tiles get read.** Indexed blocks mean a pair reads only
+- Only overlapping tiles get read. Indexed blocks mean a pair reads only
   the tiles its bin square touches; many files carry no inter-chromosomal
   matrices at all, so those pairs cost one lookup and nothing else.
-- **Work is shared across every pair.** 24 regions share 24 normalization
+- Work is shared across every pair. 24 regions share 24 normalization
   vectors across all 300 pairs. `test/data/test.hic`'s whole-genome fetch:
   648 range reads cold, 0 on repeat.
 

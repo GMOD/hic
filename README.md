@@ -37,11 +37,11 @@ records.bin2 // Int32Array of bin indices along region2
 records.counts // Float32Array of contact counts
 ```
 
-Both reading methods take an optional trailing `{ onProgress }`, called
-`(current, total)` as the work lands, so a loading indicator can show a bar
-rather than a spinner. The unit is the block for a contact fetch and the
-expected-value chunk for the normalization-index walk — the slow part of opening
-a pre-v9 file. See [docs/api.md](docs/api.md#progress).
+`getMetaData()` and `getContactRecords()` both take an optional trailing
+`{ onProgress }`, called `(current, total)` as the work lands, so a loading
+indicator can show a bar rather than a spinner. The unit is the block for a
+contact fetch and the expected-value chunk for the normalization-index walk —
+the slow part of opening a pre-v9 file. See [docs/api.md](docs/api.md#progress).
 
 ```js
 await hic.getContactRecords('KR', region, region, 'BP', 2_500_000, {
@@ -97,7 +97,7 @@ See [docs/api.md](docs/api.md) for the full API reference.
   requested region.
 - A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose x
   window sits right of its y window gets swapped before it goes out;
-  `transposed` says so, and `bin1` then runs along `region2`.
+  `transposed` marks that swap, and `bin1` then runs along `region2`.
 - `appliedNormalization` names the normalization the file actually applied,
   which is not always the one you asked for — a `.hic` carries normalization
   vectors per (type, chromosome, unit, binsize), so it can offer KR at 5 kb and

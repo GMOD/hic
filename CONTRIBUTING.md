@@ -8,9 +8,8 @@ pnpm test --run
 pnpm build
 ```
 
-`pnpm test` on its own is vitest in watch mode, which is what you want while
-editing and not what you want in a script — `--run` is the one-shot form CI and
-`preversion` use.
+`pnpm test` on its own is vitest in watch mode, useful while editing but not in
+a script — `--run` is the one-shot form CI and `preversion` use.
 
 `test/data/test.hic` is the hg19 v8 file upstream hic-straw ships as its own
 test data. The suites that read it pin real contact counts, so a parse change
@@ -30,13 +29,13 @@ same commit:
 dot -Tsvg docs/img/dataflow.dot -o docs/img/dataflow.svg
 ```
 
-Nothing checks this — graphviz is not a dependency and different versions emit
-different SVG bytes, so a staleness check would fail on toolchain drift rather
-than on a stale diagram.
+This isn't checked in CI — graphviz is not a dependency and different versions
+emit different SVG bytes, so a staleness check would fail on toolchain drift
+rather than on a stale diagram.
 
 The palette and legend are shared with `bam-js`, `tabix-js` and `cram-js`; the
-`.dot` header says which of their conventions this one keeps and which it drops.
-Straighten a divergence rather than matching the outlier.
+`.dot` header lists which of their conventions this one keeps and which it
+drops. Straighten a divergence rather than matching the outlier.
 
 ## Publishing
 

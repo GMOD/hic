@@ -17,7 +17,7 @@ flight shares it, and a failure retries.
 `nvi` is optional and only matters for pre-v9 files, which do not record where
 their normalization vector index lives. Without it the parser finds that
 position by walking the expected-value vectors — a chain of small sequential
-reads, paid once per file. A v9 file records the position in its header and
+reads, incurred once per file. A v9 file records the position in its header and
 skips the walk.
 
 ### What a file holds in memory
@@ -33,12 +33,13 @@ Three caches, all per `HicFile` instance:
 `blockCacheMaxBytes` sets that 128 MB ceiling, and it is the only capacity a
 caller can change, because it is the only one bounding memory rather than a
 working set. The two entry caps come from how many region pairs a fetch runs at
-once — 24 chromosomes is 300 pairs — which the library knows and a caller would
-only have to rederive. [dataflow.md](dataflow.md#why-so-much-of-it-is-yellow)
-explains what the sharing buys.
+once — 24 chromosomes is 300 pairs — which the library already derives
+internally and a caller would only have to rederive.
+[dataflow.md](dataflow.md#why-so-much-of-it-is-yellow) explains what the
+sharing saves.
 
-Lower the ceiling where memory is tighter than bandwidth; raising it buys
-nothing once a fetch's working set fits, since the entry cap bounds the cache
+Lower the ceiling where memory is tighter than bandwidth; raising it has no
+effect once a fetch's working set fits, since the entry cap bounds the cache
 too. A block larger than the whole budget still stays cached — a cache that
 cannot hold what the caller just asked for would answer nobody.
 
@@ -78,8 +79,8 @@ chromosome: multiply by `binsize` for a genomic coordinate.
 
 Record **order is unspecified**. The result concatenates whole blocks, and a
 fetch emits the blocks it already had cached before the ones it just read, so
-the same query can answer with the same contacts in a different order. Sort if
-you need one.
+the same query can come back with the same contacts in a different order. Sort
+if you need one.
 
 The result covers every bin **overlapping** the requested region, edge-
 straddling ones included, so a region narrower than one bin still comes back
@@ -90,9 +91,9 @@ normalization vectors per (type, chromosome, unit, binsize), so a request for
 `'KR'` at a resolution that has no KR vector comes back as `'NONE'` with raw
 counts rather than failing.
 
-`transposed` says the reader swapped the query, because a `.hic` stores only the
-`bin1 <= bin2` half of the matrix. When it is true, `bin1` runs along `region2`
-and `bin2` along `region1`. It fires when `region1` sits to the right of
+`transposed` marks that the reader swapped the query, because a `.hic` stores
+only the `bin1 <= bin2` half of the matrix. When it is true, `bin1` runs along
+`region2` and `bin2` along `region1`. It fires when `region1` sits to the right of
 `region2` — a higher chromosome index, or the same chromosome and a later
 start.
 
@@ -117,10 +118,10 @@ normalization vector index, so the first call may read. `opts` is
 
 ## Progress
 
-Both reading methods take an optional trailing `{ onProgress }`, called as
-`(current, total)` with `current` 0 before the phase starts and once more as
-each unit lands. The unit differs by phase and a caller does not need to know
-which — render `current / total`.
+`getContactRecords` and `getNormalizationOptions` both take an optional
+trailing `{ onProgress }`, called as `(current, total)` with `current` 0
+before the phase starts and once more as each unit lands. The unit differs by
+phase and a caller does not need to know which — render `current / total`.
 
 ```ts
 await hic.getContactRecords('KR', region, region, 'BP', 100_000, {
@@ -138,13 +139,13 @@ most of its blocks starts most of the way along rather than at zero.
 For `getNormalizationOptions` the unit is the **expected-value chunk**, and the
 ticks come from the walk that locates the normalization vector index on a
 pre-v9 file. That walk is two round trips per chunk which no buffer can merge,
-and it is the slowest part of opening such a file — which is the phase this
-exists for. A file that records the index position (v9), or one opened with
+and it is the slowest part of opening such a file, which is why `onProgress`
+covers it. A file that records the index position (v9), or one opened with
 `nvi`, does no walk and reports nothing.
 
-The walk also runs only once per file, so it is reported to the call that
-performs it. A later call joining a load that is already finished or in flight
-is not waiting on reads and is told nothing.
+The walk also runs only once per file, so `onProgress` reports it only to the
+call that performs it. A later call joining a load that is already finished or
+in flight is not waiting on reads, so it receives no progress calls.
 
 ## Lower-level
 
@@ -155,7 +156,7 @@ and `getNormVectorIndex` take the same optional `{ onProgress }` as the two
 methods above.
 
 `init` parses the header and footer and is idempotent, so a caller that knows a
-fetch is coming can pay that round trip early; every other method awaits it
+fetch is coming can make that round trip early; every other method awaits it
 anyway. Everything else on `HicFile` — the header walk, the footer parse, the
 norm-vector-index discovery — is `private`, so this list is the whole surface.
 

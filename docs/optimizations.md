@@ -102,13 +102,14 @@ ceiling, not the end-to-end win.
 
 ### Not `DecompressionStream` either
 
-Rejected: each block is its own zlib stream, so its per-call overhead is paid
-once per block — 3–7x native zlib, worse than wasm throughout and worse than
-pako at small block sizes.
+Rejected: each block is its own zlib stream, so its per-call overhead is
+incurred once per block — 3–7x native zlib, worse than wasm throughout and
+worse than pako at small block sizes.
 
 ## What hic-straw logged, this returns
 
 A missing normalization and a matrix-less chromosome pair reach hic-straw's
 caller as a `console.log` only. `appliedNormalization` and an empty result
-carry the same information, actionable by the caller. A transposed pair is
-swapped silently by hic-straw; `transposed` comes back with the records here.
+carry the same information, actionable by the caller. hic-straw swaps a
+transposed pair without telling the caller; `transposed` comes back with the
+records here.
