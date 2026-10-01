@@ -1,3 +1,25 @@
+## [1.3.0](https://github.com/GMOD/hic/compare/v1.2.1...v1.3.0) (2026-10-01)
+
+### Documentation
+
+- Say what the read pattern actually is before recommending the range cache ([a20f191](https://github.com/GMOD/hic/commit/a20f1910b6ffef5c98fb44aca32e49ec0719b3af))
+- Measure the hic-straw comparison instead of asserting it ([f6aeda7](https://github.com/GMOD/hic/commit/f6aeda75076469b73d6250754315c2e32d3b365b))
+- Restore the Not DecompressionStream heading, for the external anchor ([2ffcec0](https://github.com/GMOD/hic/commit/2ffcec0d94229f80d012be7f175a763df6458c1c))
+- Cut dataflow.md's overlap with optimizations.md ([3045ec0](https://github.com/GMOD/hic/commit/3045ec08f5fa07daa38969a20c6753f24fe6843a))
+- Cite hic-straw source lines, and drop a claim that doesn't reproduce ([efa4458](https://github.com/GMOD/hic/commit/efa44586e119c0010def761d243058b3faf80ffe))
+- Drop two-line subtext labels from the dataflow diagram ([cdd96cc](https://github.com/GMOD/hic/commit/cdd96cc6dbea9b90e5b9d8d7feaf2805e9e47c47))
+- Spell out ContactRecords' typed-array shape on the dataflow diagram ([d5e068d](https://github.com/GMOD/hic/commit/d5e068d3249d387e8e566c85195813c39fd72356))
+- State dataflow.md's results positively instead of by negation ([ee973ec](https://github.com/GMOD/hic/commit/ee973ecf07118477f8fc3c502cd1e48b3282359d))
+- Fix agency, contrastive framing, and figures of speech in prose ([465caee](https://github.com/GMOD/hic/commit/465caee9ce56b5c0cc17cfc9f21d8a142e607938))
+
+### Features
+
+- Honour an AbortSignal on every read ([47fac3e](https://github.com/GMOD/hic/commit/47fac3e19767501d2d1a34525763c8429188a4a5))
+
+### Other Changes
+
+- Point the dataflow SYNC note at gbz-base-js ([ccefe53](https://github.com/GMOD/hic/commit/ccefe53653851de0b9500c10bd7c86c88d2aa9a8))
+
 ## [1.2.1](https://github.com/GMOD/hic/compare/v1.2.0...v1.2.1) (2026-08-22)
 
 ### Bug Fixes
