@@ -1,4 +1,4 @@
-import type { Reader } from './types.ts'
+import type { BaseOpts, Reader } from './types.ts'
 
 function concatBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
   const tmp = new Uint8Array(buffer1.byteLength + buffer2.byteLength)
@@ -19,7 +19,11 @@ export default class BufferedFile {
     this.size = args.size ?? 64000
   }
 
-  async read(position: number, length: number): Promise<ArrayBuffer> {
+  async read(
+    position: number,
+    length: number,
+    opts?: BaseOpts,
+  ): Promise<ArrayBuffer> {
     const start = position
     const end = position + length
     const bufferStart = this.bufferStart
@@ -32,7 +36,7 @@ export default class BufferedFile {
       this.buffer = undefined
       this.bufferStart = 0
       this.bufferLength = 0
-      result = await this.file.read(position, length)
+      result = await this.file.read(position, length, opts)
     } else if (buf && start >= bufferStart && end <= bufferEnd) {
       // Request within buffer bounds
       const sliceStart = start - bufferStart
@@ -40,7 +44,7 @@ export default class BufferedFile {
     } else if (buf && start < bufferStart && end > bufferStart) {
       // Overlap left (unexpected in straw); we don't adjust the buffer
       const l1 = bufferStart - start
-      const a1 = await this.file.read(position, l1)
+      const a1 = await this.file.read(position, l1, opts)
       const l2 = length - l1
       if (l2 > 0) {
         result = concatBuffers(a1, buf.slice(0, l2))
@@ -53,7 +57,7 @@ export default class BufferedFile {
       const a1 = buf.slice(this.bufferLength - l1, this.bufferLength)
       const l2 = length - l1
       if (l2 > 0) {
-        const next = await this.file.read(bufferEnd, this.size)
+        const next = await this.file.read(bufferEnd, this.size, opts)
         this.buffer = next
         this.bufferStart = bufferEnd
         this.bufferLength = next.byteLength
@@ -63,7 +67,7 @@ export default class BufferedFile {
       }
     } else {
       // No overlap with buffer
-      const next = await this.file.read(position, this.size)
+      const next = await this.file.read(position, this.size, opts)
       this.buffer = next
       this.bufferStart = position
       this.bufferLength = next.byteLength

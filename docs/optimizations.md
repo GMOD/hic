@@ -79,9 +79,10 @@ trace.
 
 - Normalization-vector and block reads run concurrently, not sequentially: 2
   round-trip waves deep instead of 4, same request count.
-- Caches hold the in-flight promise, not just the result, so concurrent
-  pairs sharing a chromosome don't re-issue the same read (+12 requests on a
-  6-pair fetch without this).
+- Caches share the in-flight read, not just the result, so concurrent pairs
+  sharing a chromosome don't re-issue the same read (+12 requests on a 6-pair
+  fetch without this). `@gmod/shared-read-cache` holds them, so one caller's
+  abort cancels a shared read only once every caller has aborted.
 
 ## Inflate is wasm libdeflate
 

@@ -1,6 +1,6 @@
 import BinaryParser from './binary.ts'
 
-import type { Reader } from './types.ts'
+import type { BaseOpts, Reader } from './types.ts'
 
 const DOUBLE = 8
 
@@ -25,7 +25,7 @@ export default class NormalizationVector {
     this.dataType = dataType
   }
 
-  async getValues(start: number, end: number) {
+  async getValues(start: number, end: number, opts?: BaseOpts) {
     // The read below clamps to `nValues`, so the cache can never cover past it.
     // Compare against the clamped bound or a request that runs off the end of
     // the vector — reachable when the assembly's refseq is longer than the size
@@ -52,7 +52,7 @@ export default class NormalizationVector {
       // region pair, on every fetch, for as long as the view stays there.
       const data =
         n > 0
-          ? await this.file.read(startPosition, n * this.dataType)
+          ? await this.file.read(startPosition, n * this.dataType, opts)
           : new ArrayBuffer(0)
       const parser = new BinaryParser(new DataView(data))
       const values = new Float64Array(n)

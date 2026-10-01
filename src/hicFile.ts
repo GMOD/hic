@@ -1,4 +1,5 @@
 import { inflateRawUnknownSize } from '@gmod/inflate'
+import { SharedReadCache, throwIfAborted } from '@gmod/shared-read-cache'
 import { LocalFile } from 'generic-filehandle2'
 
 import { binWindow } from './binWindow.ts'
@@ -12,11 +13,11 @@ import { readerFromFilehandle } from './reader.ts'
 import type { ContactRecords } from './contactRecords.ts'
 import type MatrixZoomData from './matrixZoomData.ts'
 import type {
+  BaseOpts,
   BlockIndexEntry,
   Chromosome,
   HicMetadata,
   HicRegion,
-  ProgressCallback,
   ProgressOpts,
   Reader,
 } from './types.ts'
@@ -38,6 +39,15 @@ const INT = 4
 interface MasterIndexEntry {
   start: number
   size: number
+}
+
+interface NormVectorIndex {
+  entries: Record<string, BlockIndexEntry>
+  types: string[]
+}
+
+interface SignalOpts extends ProgressOpts {
+  signal: AbortSignal
 }
 
 export interface HicConfig {
@@ -160,27 +170,30 @@ export class HicFile {
   private config: HicConfig
   private file: Reader
 
-  // Both caches hold the in-flight PROMISE, not the resolved value. A
+  // These caches share the in-flight read, not just its result. A
   // multi-region fetch runs its region pairs concurrently and they share
   // chromosomes, so caching only the result had every concurrent pair miss and
   // re-issue the same reads — measured +12 range requests on a 6-pair fetch.
-  // Same shape as `initPromise`/`normVectorIndexP`, rejection eviction included.
-  private normVectorCache = new LRU<
+  // `SharedReadCache` cancels a shared read only once every caller waiting on
+  // it has aborted, and drops a rejection so the next caller retries.
+  private headerCache = new SharedReadCache<string, void>()
+  private normVectorIndexCache = new SharedReadCache<
     string,
-    Promise<NormalizationVector | undefined>
-  >(NORM_VECTOR_CACHE_SIZE)
-  private normalizationTypes = ['NONE']
-  private matrixCache = new LRU<string, Promise<Matrix | undefined>>(
-    MATRIX_CACHE_SIZE,
-  )
+    NormVectorIndex | undefined
+  >()
+  private normVectorCache = new SharedReadCache<
+    string,
+    NormalizationVector | undefined
+  >({ maxSize: NORM_VECTOR_CACHE_SIZE })
+  private matrixCache = new SharedReadCache<string, Matrix | undefined>({
+    maxSize: MATRIX_CACHE_SIZE,
+  })
   // Assigned in the constructor rather than here, since its byte budget is
   // configurable and a field initializer cannot see `config`.
   private blockCache: LRU<string, Block>
   private normVectorIndexPosition = -1
   private normVectorIndexSize = -1
 
-  private initPromise: Promise<void> | undefined
-  private normVectorIndexP: Promise<void> | undefined
   private version = 0
   private genomeId = ''
   private footerPosition = 0
@@ -188,7 +201,6 @@ export class HicFile {
   // carrying none of it ends. Public so a test can cut a real file there to
   // make that second shape.
   normExpectedValueVectorsPosition: number | undefined
-  private normVectorIndex: Record<string, BlockIndexEntry> | undefined
 
   private chromosomes: Chromosome[] = []
   private chromosomeIndexMap: Record<string, number> = {}
@@ -215,64 +227,52 @@ export class HicFile {
     }
   }
 
-  async init() {
-    // Memoize the promise, not a boolean flag: two concurrent callers must
-    // share one header parse rather than both racing readHeaderAndFooter. Clear
-    // it on failure so a later call retries instead of caching a rejected
-    // promise forever.
-    this.initPromise ??= this.readHeaderAndFooter().catch((e: unknown) => {
-      this.initPromise = undefined
-      throw e
-    })
-    return this.initPromise
+  async init(opts?: BaseOpts) {
+    return this.headerCache.get('header', opts?.signal, signal =>
+      this.readHeaderAndFooter(signal),
+    )
   }
 
-  async getMetaData() {
-    await this.init()
+  async getMetaData(opts?: BaseOpts) {
+    await this.init(opts)
     return this.meta!
   }
 
-  private async readHeaderAndFooter() {
-    // `init` clears its memoized promise on failure so a transient read error
-    // retries, and this parse appends as it goes — so a retry has to start from
-    // empty or a failure part-way through the chromosome loop leaves the second
-    // run appending to the first's partial output (duplicate refNames out of
-    // `getRefNames`, a duplicated binsize list out of `getMetaData`).
-    this.chromosomes = []
-    this.chromosomeIndexMap = {}
-    this.chrAliasTable = {}
-    this.bpResolutions = []
-    this.masterIndex = {}
-
-    // Read initial fields magic, version, and footer position
-    let data = await this.file.read(0, 16)
+  // Parsed into locals and committed only at the end: a parse every caller
+  // abandoned can still be running beside the one that replaced it, and a
+  // transient failure part-way through must leave nothing half-written for the
+  // retry to append to.
+  private async readHeaderAndFooter(signal: AbortSignal) {
+    let data = await this.file.read(0, 16, { signal })
     if (data.byteLength === 0) {
       throw new Error('File content is empty')
     }
     let binaryParser = new BinaryParser(new DataView(data))
     binaryParser.getString() // magic
-    this.version = binaryParser.getInt()
-    if (this.version < 5) {
-      throw new Error(`Unsupported hic version: ${this.version}`)
+    const version = binaryParser.getInt()
+    if (version < 5) {
+      throw new Error(`Unsupported hic version: ${version}`)
     }
-    this.footerPosition = binaryParser.getLong()
+    const footerPosition = binaryParser.getLong()
 
-    // Read footer to determine file position of body section (end of header)
-    await this.readFooter()
+    const { masterIndex, normExpectedValueVectorsPosition } =
+      await this.readFooter(version, footerPosition, signal)
 
-    const bodyPosition = Object.values(this.masterIndex).reduce(
+    const bodyPosition = Object.values(masterIndex).reduce(
       (min, entry) => Math.min(min, entry.start),
       Number.MAX_VALUE,
     )
 
-    data = await this.file.read(16, bodyPosition - 16)
+    data = await this.file.read(16, bodyPosition - 16, { signal })
     binaryParser = new BinaryParser(new DataView(data))
 
-    this.genomeId = binaryParser.getString()
+    const genomeId = binaryParser.getString()
 
-    if (this.version >= 9) {
-      this.normVectorIndexPosition = binaryParser.getLong()
-      this.normVectorIndexSize = binaryParser.getLong()
+    let normVectorIndexPosition = -1
+    let normVectorIndexSize = -1
+    if (version >= 9) {
+      normVectorIndexPosition = binaryParser.getLong()
+      normVectorIndexSize = binaryParser.getLong()
     }
 
     let nAttributes = binaryParser.getInt()
@@ -281,96 +281,113 @@ export class HicFile {
       binaryParser.getString() // attribute value
     }
 
+    const chromosomes: Chromosome[] = []
+    const chromosomeIndexMap: Record<string, number> = {}
     let nChrs = binaryParser.getInt()
     let i = 0
     while (nChrs-- > 0) {
       const chr = {
         index: i,
         name: binaryParser.getString(),
-        size: this.version < 9 ? binaryParser.getInt() : binaryParser.getLong(),
+        size: version < 9 ? binaryParser.getInt() : binaryParser.getLong(),
       }
-      this.chromosomes.push(chr)
-      this.chromosomeIndexMap[chr.name] = chr.index
+      chromosomes.push(chr)
+      chromosomeIndexMap[chr.name] = chr.index
       i++
     }
 
+    const bpResolutions: number[] = []
     let nBpResolutions = binaryParser.getInt()
     while (nBpResolutions-- > 0) {
-      this.bpResolutions.push(binaryParser.getInt())
+      bpResolutions.push(binaryParser.getInt())
     }
 
-    // Build lookup table for well-known chr aliases
-    for (const chrName of Object.keys(this.chromosomeIndexMap)) {
+    const chrAliasTable: Record<string, string> = {}
+    for (const chrName of Object.keys(chromosomeIndexMap)) {
       if (chrName.startsWith('chr')) {
-        this.chrAliasTable[chrName.slice(3)] = chrName
+        chrAliasTable[chrName.slice(3)] = chrName
       } else if (chrName === 'MT') {
-        this.chrAliasTable.chrM = chrName
+        chrAliasTable.chrM = chrName
       } else {
-        this.chrAliasTable[`chr${chrName}`] = chrName
+        chrAliasTable[`chr${chrName}`] = chrName
       }
     }
 
+    throwIfAborted(signal)
+    this.version = version
+    this.footerPosition = footerPosition
+    this.masterIndex = masterIndex
+    this.normExpectedValueVectorsPosition = normExpectedValueVectorsPosition
+    this.genomeId = genomeId
+    this.normVectorIndexPosition = normVectorIndexPosition
+    this.normVectorIndexSize = normVectorIndexSize
+    this.chromosomes = chromosomes
+    this.chromosomeIndexMap = chromosomeIndexMap
+    this.bpResolutions = bpResolutions
+    this.chrAliasTable = chrAliasTable
     this.meta = {
-      version: this.version,
-      genome: this.genomeId,
-      chromosomes: this.chromosomes,
-      resolutions: this.bpResolutions,
+      version,
+      genome: genomeId,
+      chromosomes,
+      resolutions: bpResolutions,
     }
   }
 
-  private async readFooter() {
-    const skip = this.version < 9 ? 8 : 12
-    let data = await this.file.read(this.footerPosition, skip)
+  private async readFooter(
+    version: number,
+    footerPosition: number,
+    signal: AbortSignal,
+  ) {
+    const skip = version < 9 ? 8 : 12
+    let data = await this.file.read(footerPosition, skip, { signal })
 
     let binaryParser = new BinaryParser(new DataView(data))
     // Total size, master index + expected values
-    const nBytes =
-      this.version < 9 ? binaryParser.getInt() : binaryParser.getLong()
+    const nBytes = version < 9 ? binaryParser.getInt() : binaryParser.getLong()
     let nEntries = binaryParser.getInt()
 
     // Estimate the size of the master index. String key length is unknown, be
     // conservative (100 bytes).
     const miSize = nEntries * (100 + 64 + 32)
     data = await this.file.read(
-      this.footerPosition + skip,
+      footerPosition + skip,
       Math.min(miSize, nBytes),
+      { signal },
     )
     binaryParser = new BinaryParser(new DataView(data))
 
+    const masterIndex: Record<string, MasterIndexEntry> = {}
     while (nEntries-- > 0) {
       const key = binaryParser.getString()
       const pos = binaryParser.getLong()
       const size = binaryParser.getInt()
-      this.masterIndex[key] = { start: pos, size }
+      masterIndex[key] = { start: pos, size }
     }
 
     // Normalized expected values start after the expected values
-    if (this.version > 5) {
-      const s = this.version < 9 ? 4 : 8
-      this.normExpectedValueVectorsPosition = this.footerPosition + s + nBytes
-    }
+    const normExpectedValueVectorsPosition =
+      version > 5 ? footerPosition + (version < 9 ? 4 : 8) + nBytes : undefined
+    return { masterIndex, normExpectedValueVectorsPosition }
   }
 
-  async getMatrix(chrIdx1: number, chrIdx2: number) {
-    const key = Matrix.getKey(chrIdx1, chrIdx2)
-    let p = this.matrixCache.get(key)
-    if (!p) {
-      p = this.readMatrix(chrIdx1, chrIdx2).catch((e: unknown) => {
-        this.matrixCache.delete(key)
-        throw e
-      })
-      this.matrixCache.set(key, p)
-    }
-    return p
+  async getMatrix(chrIdx1: number, chrIdx2: number, opts?: BaseOpts) {
+    await this.init(opts)
+    return this.matrixCache.get(
+      Matrix.getKey(chrIdx1, chrIdx2),
+      opts?.signal,
+      signal => this.readMatrix(chrIdx1, chrIdx2, signal),
+    )
   }
 
-  private async readMatrix(chrIdx1: number, chrIdx2: number) {
-    await this.init()
-
+  private async readMatrix(
+    chrIdx1: number,
+    chrIdx2: number,
+    signal: AbortSignal,
+  ) {
     const idx = this.masterIndex[Matrix.getKey(chrIdx1, chrIdx2)]
     let matrix: Matrix | undefined
     if (idx) {
-      const data = await this.file.read(idx.start, idx.size)
+      const data = await this.file.read(idx.start, idx.size, { signal })
       matrix = Matrix.parseMatrix(data, this.chromosomes)
     }
     return matrix
@@ -384,7 +401,7 @@ export class HicFile {
     binsize: number,
     opts?: ProgressOpts,
   ) {
-    await this.init()
+    await this.init(opts)
 
     const idx1 = this.chromosomeIndexMap[this.getFileChrName(region1.chr)]
     const idx2 = this.chromosomeIndexMap[this.getFileChrName(region2.chr)]
@@ -427,12 +444,13 @@ export class HicFile {
     // resolved once per pair rather than per block, each paired with the bin
     // offset its values start at.
     const [norm, blocks] = await Promise.all([
-      this.getNormVectors(normalization, r1, r2, units, binsize),
+      this.getNormVectors(normalization, r1, r2, units, binsize, opts),
       // The measurable half of the pair: blocks are counted and the two norm
       // vectors are not, because the vector chain is two hops whatever the
       // query and the block chain is the one that grows with the region.
       this.getBlocks(r1, r2, binsize, opts),
     ])
+    throwIfAborted(opts?.signal)
 
     // Sum of the blocks' record counts bounds the survivors, so the output is
     // allocated once and filled by a write cursor. Blocks overlap the window
@@ -520,7 +538,9 @@ export class HicFile {
     r2: HicRegion,
     units: string,
     binsize: number,
+    opts?: BaseOpts,
   ) {
+    const signalOpts = { signal: opts?.signal }
     let result:
       | {
           v1: Float64Array
@@ -539,6 +559,7 @@ export class HicFile {
         chr1,
         units,
         binsize,
+        signalOpts,
       )
       const nv2 =
         chr1 === chr2
@@ -548,11 +569,20 @@ export class HicFile {
               chr2,
               units,
               binsize,
+              signalOpts,
             )
       if (nv1 && nv2) {
         result = {
-          v1: await nv1.getValues(offset1, Math.ceil(r1.end / binsize)),
-          v2: await nv2.getValues(offset2, Math.ceil(r2.end / binsize)),
+          v1: await nv1.getValues(
+            offset1,
+            Math.ceil(r1.end / binsize),
+            signalOpts,
+          ),
+          v2: await nv2.getValues(
+            offset2,
+            Math.ceil(r2.end / binsize),
+            signalOpts,
+          ),
           offset1,
           offset2,
         }
@@ -570,7 +600,7 @@ export class HicFile {
     const blockKey = (blockNumber: number, zd: MatrixZoomData) =>
       `${zd.getKey()}_${blockNumber}`
 
-    await this.init()
+    await this.init(opts)
     const chr1 = this.getFileChrName(region1.chr)
     const chr2 = this.getFileChrName(region2.chr)
     const idx1 = this.chromosomeIndexMap[chr1]
@@ -586,7 +616,8 @@ export class HicFile {
       // .hic files store no inter-chromosomal maps, and a multi-region view asks
       // for every pair. Answering with no blocks, rather than warning once per
       // pair per fetch, leaves that for the caller to notice or ignore.
-      const matrix = await this.getMatrix(idx1, idx2)
+      const signalOpts = { signal: opts?.signal }
+      const matrix = await this.getMatrix(idx1, idx2, signalOpts)
       if (matrix) {
         const zd = matrix.getZoomData(binSize)
         if (!zd) {
@@ -623,7 +654,7 @@ export class HicFile {
         // pins that.
         const newBlocks = await Promise.all(
           blockNumbersToQuery.map(async blockNumber => {
-            const block = await this.readBlock(blockNumber, zd)
+            const block = await this.readBlock(blockNumber, zd, signalOpts)
             done++
             onProgress?.(done, blockNumbers.length)
             return block
@@ -640,12 +671,15 @@ export class HicFile {
     return blocks
   }
 
-  async readBlock(blockNumber: number, zd: MatrixZoomData) {
+  async readBlock(blockNumber: number, zd: MatrixZoomData, opts?: BaseOpts) {
     const idx = zd.blockIndex[blockNumber]
 
     let block: Block | undefined
     if (idx) {
-      const data = await this.file.read(idx.filePosition, idx.size)
+      const data = await this.file.read(idx.filePosition, idx.size, {
+        signal: opts?.signal,
+      })
+      throwIfAborted(opts?.signal)
       // `.subarray(2)` drops the zlib header: libdeflate's raw-deflate path is
       // the fast one, and a `.hic` records only a block's *compressed* size, so
       // there is no known output size to hand the exact-size entry point.
@@ -761,8 +795,9 @@ export class HicFile {
     chr: string,
     unit: string,
     binSize: number,
+    opts?: BaseOpts,
   ) {
-    await this.init()
+    await this.init(opts)
 
     const chrIdx = this.chromosomeIndexMap[this.getFileChrName(chr)]
     if (chrIdx === undefined) {
@@ -770,35 +805,30 @@ export class HicFile {
     }
     const key = getNormalizationVectorKey(type, chrIdx, unit, binSize)
 
-    // Caching the promise is what keeps concurrent region pairs sharing one
-    // vector: a chromosome appears in every pair it takes part in, so with a
+    // Sharing the in-flight read is what keeps concurrent region pairs sharing
+    // one vector: a chromosome appears in every pair it takes part in, so with a
     // result-only cache each of those pairs missed while the first was still in
     // flight and read the header again — and then held its own
     // `NormalizationVector`, whose value cache is per instance, so the whole
     // vector was re-read too.
-    let p = this.normVectorCache.get(key)
-    if (!p) {
-      // A file with no vectors at all, or none for this (type, chr, unit,
-      // binsize), simply answers undefined and the caller falls back to raw
-      // counts. hic-straw warns to the console here; that fires once per
-      // chromosome per region pair per fetch, and the console is the wrong place
-      // for it anyway — `getContactRecords` reports the normalization it
-      // actually applied instead.
-      p = this.readNormalizationVector(key).catch((e: unknown) => {
-        this.normVectorCache.delete(key)
-        throw e
-      })
-      this.normVectorCache.set(key, p)
-    }
-    return p
+    //
+    // A file with no vectors at all, or none for this (type, chr, unit,
+    // binsize), simply answers undefined and the caller falls back to raw
+    // counts. hic-straw warns to the console here; that fires once per
+    // chromosome per region pair per fetch, and the console is the wrong place
+    // for it anyway — `getContactRecords` reports the normalization it actually
+    // applied instead.
+    return this.normVectorCache.get(key, opts?.signal, signal =>
+      this.readNormalizationVector(key, signal),
+    )
   }
 
-  private async readNormalizationVector(key: string) {
-    const idx = (await this.getNormVectorIndex())?.[key]
+  private async readNormalizationVector(key: string, signal: AbortSignal) {
+    const idx = (await this.getNormVectorIndex({ signal }))?.[key]
     if (!idx) {
       return undefined
     }
-    const data = await this.file.read(idx.filePosition, 8)
+    const data = await this.file.read(idx.filePosition, 8, { signal })
     const parser = new BinaryParser(new DataView(data))
     const nValues = this.version < 9 ? parser.getInt() : parser.getLong()
     const dataType = this.version < 9 ? DOUBLE : FLOAT
@@ -808,51 +838,54 @@ export class HicFile {
   }
 
   async getNormVectorIndex(opts?: ProgressOpts) {
+    return (await this.getParsedNormVectorIndex(opts))?.entries
+  }
+
+  private async getParsedNormVectorIndex(opts?: ProgressOpts) {
     // await init() before the version gate, not after: this class defaults
     // `version` to 0, so checking it before the header is parsed would answer
     // "no index" for every file rather than for a v5 one.
-    await this.init()
-    if (this.version >= 6) {
-      // Memoize the *attempt*, not just a populated result. A legal (if
-      // uncommon) v8 file with no norm vectors leaves `normVectorIndex`
-      // undefined, and the old `!this.normVectorIndex` guard then re-ran the
-      // discovery on every call — two calls per region pair per fetch, each
-      // walking the whole normalized-expected-values section with a chain of
-      // sequential range reads, only to rediscover there is nothing there.
-      // Cleared on failure (like `init`) so a transient read error retries
-      // rather than caching a rejection forever.
-      // The walk runs once, so its progress belongs to the call that performs
-      // it: a caller joining an in-flight or finished load is not waiting on
-      // reads and is told nothing, which is the truth rather than a silence.
-      this.normVectorIndexP ??= this.loadNormVectorIndex(
-        opts?.onProgress,
-      ).catch((e: unknown) => {
-        this.normVectorIndexP = undefined
-        throw e
-      })
-      await this.normVectorIndexP
+    await this.init(opts)
+    if (this.version < 6) {
+      return undefined
     }
-    return this.normVectorIndex
+    // Memoize the *attempt*, not just a populated result. A legal (if uncommon)
+    // v8 file with no norm vectors has no index, and re-running the discovery
+    // on every call cost two calls per region pair per fetch, each walking the
+    // whole normalized-expected-values section with a chain of sequential range
+    // reads, only to rediscover there is nothing there.
+    //
+    // The walk runs once, so its progress belongs to the call that performs
+    // it: the fill is per call, so a caller joining an in-flight or finished
+    // load is not waiting on reads and is told nothing.
+    return this.normVectorIndexCache.get('nvi', opts?.signal, signal =>
+      this.loadNormVectorIndex({ signal, onProgress: opts?.onProgress }),
+    )
   }
 
-  private async loadNormVectorIndex(onProgress?: ProgressCallback) {
-    // If we know the position of the norm vector index, read it directly.
-    // This is the case for hic v9 files.
+  private async loadNormVectorIndex(opts: SignalOpts) {
     if (this.normVectorIndexPosition > 0 && this.normVectorIndexSize > 0) {
-      await this.readNormVectorIndex({
-        start: this.normVectorIndexPosition,
-        size: this.normVectorIndexSize,
-      })
+      return this.readNormVectorIndex(
+        {
+          start: this.normVectorIndexPosition,
+          size: this.normVectorIndexSize,
+        },
+        opts.signal,
+      )
     } else if (this.config.nvi) {
       const nviArray = decodeURIComponent(this.config.nvi).split(',')
-      await this.readNormVectorIndex({
-        start: parseInt(nviArray[0]!),
-        size: parseInt(nviArray[1]!),
-      })
+      return this.readNormVectorIndex(
+        {
+          start: parseInt(nviArray[0]!),
+          size: parseInt(nviArray[1]!),
+        },
+        opts.signal,
+      )
     } else {
       try {
-        await this.readNormExpectedValuesAndNormVectorIndex(onProgress)
+        return await this.readNormExpectedValuesAndNormVectorIndex(opts)
       } catch (e) {
+        throwIfAborted(opts.signal)
         // Not "expected if the file has no norm vectors" — that case never
         // arrives here. hic-straw's own IO threw a 416 for a read past EOF and
         // this caught it; `generic-filehandle2` deliberately turns a 416 into an
@@ -861,50 +894,51 @@ export class HicFile {
         // the read side owns that case now, and anything reaching here is a real
         // failure worth printing.
         console.error(e)
+        return undefined
       }
     }
   }
 
   async getNormalizationOptions(opts?: ProgressOpts) {
-    // Normalization options are computed as a side effect of loading the
-    // index. A bit ugly but alternatives are worse.
-    await this.getNormVectorIndex(opts)
-    return this.normalizationTypes
+    return (await this.getParsedNormVectorIndex(opts))?.types ?? ['NONE']
   }
 
-  private async readNormVectorIndex(range: { start: number; size: number }) {
-    await this.init()
-    const data = await this.file.read(range.start, range.size)
+  private async readNormVectorIndex(
+    range: { start: number; size: number },
+    signal: AbortSignal,
+  ) {
+    const data = await this.file.read(range.start, range.size, { signal })
     const binaryParser = new BinaryParser(new DataView(data))
-    this.normVectorIndex = {}
+    const index: NormVectorIndex = { entries: {}, types: ['NONE'] }
     let nEntries = binaryParser.getInt()
     while (nEntries-- > 0) {
-      this.parseNormVectorEntry(binaryParser)
+      this.parseNormVectorEntry(binaryParser, index)
     }
-    return this.normVectorIndex
+    return index
   }
 
   // Used when the position of the norm vector index is unknown: read through
   // the expected values to find the index.
-  private async readNormExpectedValuesAndNormVectorIndex(
-    onProgress?: ProgressCallback,
-  ) {
-    await this.init()
+  private async readNormExpectedValuesAndNormVectorIndex(opts: SignalOpts) {
+    const { signal } = opts
+    let index: NormVectorIndex | undefined
     if (this.normExpectedValueVectorsPosition !== undefined) {
       const nviStart = await this.skipExpectedValues(
         this.normExpectedValueVectorsPosition,
-        onProgress,
+        opts,
       )
       let byteCount = INT
 
-      let data = await this.file.read(nviStart, INT)
+      let data = await this.file.read(nviStart, INT, { signal })
       // Possible if there are no norm vectors. A legal v8 file, though uncommon.
       if (data.byteLength !== 0) {
         const binaryParser = new BinaryParser(new DataView(data))
         const nEntries = binaryParser.getInt()
         const sizeEstimate = nEntries * 30
-        data = await this.file.read(nviStart + byteCount, sizeEstimate)
-        this.normVectorIndex = {}
+        data = await this.file.read(nviStart + byteCount, sizeEstimate, {
+          signal,
+        })
+        const found: NormVectorIndex = { entries: {}, types: ['NONE'] }
 
         const processEntries = async (remaining: number, buf: ArrayBuffer) => {
           const parser = new BinaryParser(new DataView(buf))
@@ -914,30 +948,33 @@ export class HicFile {
               n++ // Reset counter as entry is not processed
               byteCount += parser.position
               const est = Math.max(1000, n * 30)
-              const more = await this.file.read(nviStart + byteCount, est)
+              const more = await this.file.read(nviStart + byteCount, est, {
+                signal,
+              })
               await processEntries(n, more)
               return
             }
-            this.parseNormVectorEntry(parser)
+            this.parseNormVectorEntry(parser, found)
           }
           byteCount += parser.position
         }
 
         await processEntries(nEntries, data)
+        throwIfAborted(signal)
         this.config.nvi = `${nviStart},${byteCount}`
+        index = found
       }
     }
+    return index
   }
 
   // Used when the position of the norm vector index is unknown: skip the
   // normalized expected values to find the index.
-  private async skipExpectedValues(
-    start: number,
-    onProgress?: ProgressCallback,
-  ) {
+  private async skipExpectedValues(start: number, opts: SignalOpts) {
+    const { signal, onProgress } = opts
     const version = this.version
     const file = new BufferedFile({ file: this.file, size: 256000 })
-    const data = await file.read(start, INT)
+    const data = await file.read(start, INT, { signal })
     // A file with no normalization at all ends where this section would start,
     // so the count this is about to read is past EOF. That is the same "no norm
     // vectors" case `readNormExpectedValuesAndNormVectorIndex` guards its own
@@ -963,7 +1000,7 @@ export class HicFile {
     const skipChunk = async (chunkStart: number) => {
       let chunkSize = 0
 
-      let buf = await file.read(chunkStart, 500)
+      let buf = await file.read(chunkStart, 500, { signal })
       let parser = new BinaryParser(new DataView(buf))
       parser.getString() // type
       parser.getString() // unit
@@ -971,7 +1008,7 @@ export class HicFile {
       const nValues = version < 9 ? parser.getInt() : parser.getLong()
       chunkSize += parser.position + nValues * (version < 9 ? DOUBLE : FLOAT)
 
-      buf = await file.read(chunkStart + chunkSize, INT)
+      buf = await file.read(chunkStart + chunkSize, INT, { signal })
       parser = new BinaryParser(new DataView(buf))
       const nChrScaleFactors = parser.getInt()
       chunkSize +=
@@ -996,7 +1033,10 @@ export class HicFile {
     return position
   }
 
-  private parseNormVectorEntry(binaryParser: BinaryParser) {
+  private parseNormVectorEntry(
+    binaryParser: BinaryParser,
+    index: NormVectorIndex,
+  ) {
     const type = binaryParser.getString() // 15
     const chrIdx = binaryParser.getInt() // 4
     const unit = binaryParser.getString() // 3
@@ -1006,10 +1046,10 @@ export class HicFile {
       this.version < 9 ? binaryParser.getInt() : binaryParser.getLong() // 4:8
     const key = `${type}_${chrIdx}_${unit}_${binSize}`
 
-    if (!this.normalizationTypes.includes(type)) {
-      this.normalizationTypes.push(type)
+    if (!index.types.includes(type)) {
+      index.types.push(type)
     }
-    this.normVectorIndex![key] = { filePosition, size: sizeInBytes }
+    index.entries[key] = { filePosition, size: sizeInBytes }
   }
 
   getFileChrName(chrAlias: string) {

@@ -37,9 +37,9 @@ records.bin2 // Int32Array of bin indices along region2
 records.counts // Float32Array of contact counts
 ```
 
-`getMetaData()` and `getContactRecords()` both take an optional trailing
-`{ onProgress }`, called `(current, total)` as the work lands, so a loading
-indicator can show a bar rather than a spinner. The unit is the block for a
+`getNormalizationOptions()` and `getContactRecords()` both take an optional
+trailing `{ onProgress }`, called `(current, total)` as the work lands, so a
+loading indicator can show a bar rather than a spinner. The unit is the block for a
 contact fetch and the expected-value chunk for the normalization-index walk —
 the slow part of opening a pre-v9 file. See [docs/api.md](docs/api.md#progress).
 
@@ -48,6 +48,9 @@ await hic.getContactRecords('KR', region, region, 'BP', 2_500_000, {
   onProgress: (current, total) => showBar(current / total),
 })
 ```
+
+Every async method also takes an `AbortSignal` the same way, `{ signal }`, and
+forwards it to each read; see [docs/api.md](docs/api.md#cancellation).
 
 In the browser, or for a file over HTTP, pass a `filehandle` from
 [`generic-filehandle2`](https://www.npmjs.com/package/generic-filehandle2)

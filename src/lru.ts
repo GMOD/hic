@@ -65,8 +65,6 @@ export default class LRU<K, V> {
     }
   }
 
-  // Used to evict a rejected in-flight promise so the next caller retries
-  // rather than resolving against a cached failure forever.
   delete(key: K) {
     const existing = this.map.get(key)
     if (existing !== undefined) {

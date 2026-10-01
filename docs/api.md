@@ -6,7 +6,7 @@
 | -------------------- | ------------------- | --------------------------------------------------- |
 | `filehandle`         | `GenericFilehandle` | a `generic-filehandle2` handle (`RemoteFile`, …)    |
 | `path`               | `string`            | a local path, Node only                             |
-| `reader`             | `Reader`            | anything with `read(position, length)`              |
+| `reader`             | `Reader`            | anything with `read(position, length, opts?)`       |
 | `nvi`                | `string`            | `"position,size"` of the normalization vector index |
 | `blockCacheMaxBytes` | `number`            | block cache memory ceiling, default 128 MB          |
 
@@ -43,7 +43,7 @@ effect once a fetch's working set fits, since the entry cap bounds the cache
 too. A block larger than the whole budget still stays cached — a cache that
 cannot hold what the caller just asked for would answer nobody.
 
-## `getMetaData(): Promise<HicMetadata>`
+## `getMetaData(opts?): Promise<HicMetadata>`
 
 ```ts
 {
@@ -59,7 +59,8 @@ cannot hold what the caller just asked for would answer nobody.
 The main read. `region1` is the x axis and `region2` the y axis; a region is
 `{ chr, start, end }` with 0-based half-open coordinates. `units` is `'BP'`.
 `normalization` is one of `getNormalizationOptions()`, or `'NONE'`. `opts` is
-`{ onProgress }` — see [Progress](#progress).
+`{ onProgress, signal }` — see [Progress](#progress) and
+[Cancellation](#cancellation).
 
 ```ts
 {
@@ -114,7 +115,8 @@ inter-chromosomal maps — returns no records instead of throwing.
 The normalization types this file carries, always starting with `'NONE'`, e.g.
 `['NONE', 'VC', 'VC_SQRT', 'KR', 'SCALE']`. The list falls out of loading the
 normalization vector index, so the first call may read. `opts` is
-`{ onProgress }` — see [Progress](#progress).
+`{ onProgress, signal }` — see [Progress](#progress) and
+[Cancellation](#cancellation).
 
 ## Progress
 
@@ -147,13 +149,35 @@ The walk also runs only once per file, so `onProgress` reports it only to the
 call that performs it. A later call joining a load that is already finished or
 in flight is not waiting on reads, so it receives no progress calls.
 
+## Cancellation
+
+Every async method takes an optional `signal` in its trailing options object,
+`getMetaData({ signal })` included. An abort rejects that call with the
+signal's reason — a `DOMException` named `AbortError` unless `abort()` was given
+one — and the parser hands the signal to every read, so a `RemoteFile` cancels
+its fetch.
+
+Concurrent callers share the header, normalization-index, matrix and
+normalization-vector reads, and an abort cancels a shared read only once every
+caller waiting on it has aborted; the others get their result. A caller with no
+signal keeps a shared read alive for everyone. The caches never keep an aborted
+read, so the next call reads again.
+
+A `Reader` that ignores the signal still cancels, only later: a block fetch
+checks it once its reads land, before decompressing.
+
+Pass the signal per call. The header, normalization-index, matrix and
+normalization-vector reads run under a signal of their own, which overrides one
+set on a `RemoteFile` constructor, so a constructor signal no longer cancels
+them.
+
 ## Lower-level
 
 These are public because they are useful, not because they are the intended
 entry point: `init`, `getMatrix`, `getBlocks`, `readBlock`,
-`getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`. `getBlocks`
-and `getNormVectorIndex` take the same optional `{ onProgress }` as the two
-methods above.
+`getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`. Each async
+one takes an optional trailing `{ signal }`; `getBlocks` and
+`getNormVectorIndex` also take `{ onProgress }`.
 
 `init` parses the header and footer and is idempotent, so a caller that knows a
 fetch is coming can make that round trip early; every other method awaits it
@@ -163,14 +187,15 @@ norm-vector-index discovery — is `private`, so this list is the whole surface.
 ## Exported types
 
 `HicConfig`, `HicMetadata`, `HicRegion`, `Chromosome`, `Zoom`,
-`ContactRecords`, `Reader`, `ProgressCallback`, `ProgressOpts`.
+`ContactRecords`, `Reader`, `BaseOpts`, `ProgressCallback`, `ProgressOpts`.
 
 ## `readerFromFilehandle(filehandle): Reader`
 
-Adapts a `generic-filehandle2` handle — `read(length, position)` returning a
-`Uint8Array` — to the `read(position, length)` returning `ArrayBuffer` that
-this parser uses internally. The constructor calls it for you; the package
-exports it so you can wrap or instrument reads.
+Adapts a `generic-filehandle2` handle — `read(length, position, opts)`
+returning a `Uint8Array` — to the `read(position, length, opts)` returning
+`ArrayBuffer` that this parser uses internally, passing `opts.signal` through.
+The constructor calls it for you; the package exports it so you can wrap or
+instrument reads.
 
 A `Reader` must answer a read past end-of-file **short**, not throw. The header
 walk reads speculatively past the end: the master-index size is an estimate, and

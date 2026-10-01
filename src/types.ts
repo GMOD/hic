@@ -4,9 +4,20 @@
  * reads past the end to discover whether a file carries normalization data at
  * all. `generic-filehandle2` handles behave this way (a remote 416 included),
  * and `readerFromFilehandle` adapts one to this shape.
+ *
+ * A reader that ignores `opts.signal` still cancels, only later: the parser
+ * checks the signal when a fetch of blocks lands.
  */
 export interface Reader {
-  read: (position: number, length: number) => Promise<ArrayBuffer>
+  read: (
+    position: number,
+    length: number,
+    opts?: BaseOpts,
+  ) => Promise<ArrayBuffer>
+}
+
+export interface BaseOpts {
+  signal?: AbortSignal
 }
 
 /**
@@ -30,7 +41,7 @@ export type ProgressCallback = (current: number, total: number) => void
  * belongs to the operation a caller is waiting on, and a file-wide callback
  * could not say which of several concurrent fetches it was describing.
  */
-export interface ProgressOpts {
+export interface ProgressOpts extends BaseOpts {
   onProgress?: ProgressCallback
 }
 

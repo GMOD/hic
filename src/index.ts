@@ -4,6 +4,7 @@ export { readerFromFilehandle } from './reader.ts'
 export type { HicConfig } from './hicFile.ts'
 export type { ContactRecords } from './contactRecords.ts'
 export type {
+  BaseOpts,
   Chromosome,
   HicMetadata,
   HicRegion,
