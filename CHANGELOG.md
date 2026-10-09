@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/GMOD/hic/compare/v1.3.0...v1.3.1) (2026-10-09)
+
+### Chores
+
+- Bump @gmod/shared-read-cache to 2.0.0 ([a9aa08e](https://github.com/GMOD/hic/commit/a9aa08e86273c7a3f850ac71e34cd68dae069b37))
+
 ## [1.3.0](https://github.com/GMOD/hic/compare/v1.2.1...v1.3.0) (2026-10-01)
 
 ### Documentation
