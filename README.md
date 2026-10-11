@@ -6,10 +6,10 @@
 Read `.hic` contact matrix files, in Node.js or the browser.
 
 A fork of [hic-straw](https://github.com/aidenlab/hic-straw), rewritten in
-TypeScript and retuned for a genome browser's access pattern — many region
-pairs per fetch, arbitrary viewport windows, and contacts handed to a GPU
-renderer. See [docs/optimizations.md](docs/optimizations.md) and
-[docs/correctness.md](docs/correctness.md) for what changed and why.
+TypeScript for a genome browser: many region pairs per fetch, arbitrary
+viewport windows, and contacts handed to a GPU renderer. See
+[docs/optimizations.md](docs/optimizations.md) and
+[docs/correctness.md](docs/correctness.md) for what changed.
 
 ## Install
 
@@ -37,11 +37,14 @@ records.bin2 // Int32Array of bin indices along region2
 records.counts // Float32Array of contact counts
 ```
 
-`getNormalizationOptions()` and `getContactRecords()` both take an optional
-trailing `{ onProgress }`, called `(current, total)` as the work lands, so a
-loading indicator can show a bar rather than a spinner. The unit is the block for a
-contact fetch and the expected-value chunk for the normalization-index walk —
-the slow part of opening a pre-v9 file. See [docs/api.md](docs/api.md#progress).
+`getNormalizationOptions()` and `getContactRecords()` take an optional trailing
+`{ onProgress }`, called as `(current, total)`:
+
+- The unit is the block for a contact fetch.
+- The unit is the expected-value chunk for the normalization-index walk, the
+  slow part of opening a pre-v9 file.
+
+See [docs/api.md](docs/api.md#progress).
 
 ```js
 await hic.getContactRecords('KR', region, region, 'BP', 2_500_000, {
@@ -65,15 +68,16 @@ const hic = new HicFile({
 ```
 
 **Over HTTP, put a byte-range cache underneath. It is worth more than every
-other optimization in this package combined.** A contact-matrix query reads many
-small blocks scattered through the file — a whole-genome view of the test file
-issues over a thousand of them — and a browser runs about six requests per
-origin at a time, so the request count sets the wall clock.
-[`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
-is a drop-in for `RemoteFile` that serves those reads out of 256 KiB chunks, so
-neighboring blocks share a request. Measured in headless Chrome against a real
-69 GB ENCODE file, whole chr1 at 5 kb: **24.0 s and 225 requests becomes 1.8 s
-and 45**, for byte-identical output.
+other optimization in this package combined.**
+
+- A contact-matrix query reads many small blocks scattered through the file, and
+  a browser runs about six requests per origin at a time, so the number of
+  requests sets the load time.
+- [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
+  is a drop-in for `RemoteFile` that reads 256 KiB chunks, so neighboring blocks
+  share a request.
+- Whole chr1 at 5 kb of a real 69 GB ENCODE file, in headless Chrome: **24.0 s
+  and 225 requests becomes 1.8 s and 45**, with byte-identical output.
 
 ```js
 import { RemoteFileWithRangeCache } from '@gmod/range-cache-filehandle'
@@ -83,8 +87,8 @@ const hic = new HicFile({
 })
 ```
 
-Anything that can read `length` bytes at `position` works too, which is the
-hook for a caller with its own IO layer or cache:
+A caller with its own IO layer or cache can supply anything that reads `length`
+bytes at `position`:
 
 ```js
 const hic = new HicFile({
@@ -99,12 +103,11 @@ See [docs/api.md](docs/api.md) for the full API reference.
 - Bin indices are **absolute for their chromosome**, not relative to the
   requested region.
 - A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose x
-  window sits right of its y window gets swapped before it goes out;
-  `transposed` marks that swap, and `bin1` then runs along `region2`.
-- `appliedNormalization` names the normalization the file actually applied,
-  which is not always the one you asked for — a `.hic` file stores normalization
-  vectors per (type, chromosome, unit, binsize), so it can offer KR at 5 kb and
-  nothing at 2.5 Mb.
+  window sits right of its y window gets swapped. `transposed` marks the swap,
+  and `bin1` then runs along `region2`.
+- `appliedNormalization` names the normalization the file applied, which may
+  differ from the one you asked for. The file stores vectors per (type,
+  chromosome, unit, binsize), so it can offer KR at 5 kb and nothing at 2.5 Mb.
 - `BP` is the only unit this fork supports; it drops the FRAG code paths.
 - Each `HicFile` caches up to 128 MB of decompressed contacts. Pass
   `blockCacheMaxBytes` to change that ceiling.
