@@ -102,7 +102,7 @@ See [docs/api.md](docs/api.md) for the full API reference.
   window sits right of its y window gets swapped before it goes out;
   `transposed` marks that swap, and `bin1` then runs along `region2`.
 - `appliedNormalization` names the normalization the file actually applied,
-  which is not always the one you asked for — a `.hic` carries normalization
+  which is not always the one you asked for — a `.hic` file stores normalization
   vectors per (type, chromosome, unit, binsize), so it can offer KR at 5 kb and
   nothing at 2.5 Mb.
 - `BP` is the only unit this fork supports; it drops the FRAG code paths.
