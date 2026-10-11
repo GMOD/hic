@@ -110,6 +110,15 @@ normalization vectors per (type, chromosome, unit, binsize), so a request for
 `'KR'` at a resolution that has no KR vector comes back as `'NONE'` with raw
 counts rather than failing.
 
+With a normalization applied, the reader divides each count by the product of
+its two bins' normalization factors. It leaves out every contact where that
+product is 0 or NaN, because a bin with a zero or NaN normalization factor has
+no normalized value. hic-straw and straw leave out the same contacts, while
+Juicebox and juicer_tools keep a zero-factor contact as `Infinity`. A bin past
+the end of the file's vector counts as NaN.
+`appliedNormalization` still names the requested scheme when the reader leaves
+contacts out.
+
 `transposed` marks that the reader swapped the query, because a `.hic` stores
 only the `bin1 <= bin2` half of the matrix. When it is true, `bin1` runs along
 `region2` and `bin2` along `region1`. It fires when `region1` sits to the right of
