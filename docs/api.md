@@ -45,14 +45,20 @@ cannot hold what the caller just asked for would answer nobody.
 
 ## `getMetaData(opts?): Promise<HicMetadata>`
 
-```ts
-{
-  version: number          // 5 and up
-  genome: string           // e.g. 'hg19'
-  chromosomes: { index: number; name: string; size: number }[]
-  resolutions: number[]    // bin sizes, in bp, largest first
-}
-```
+| field         | type           | description                      |
+| ------------- | -------------- | -------------------------------- |
+| `version`     | `number`       | file format version, 5 and up    |
+| `genome`      | `string`       | genome ID, e.g. `'hg19'`         |
+| `chromosomes` | `Chromosome[]` | the file's chromosomes, in order |
+| `resolutions` | `number[]`     | bin sizes in bp, in file order   |
+
+Each `Chromosome` has these fields:
+
+| field   | type     | description                       |
+| ------- | -------- | --------------------------------- |
+| `index` | `number` | position in `chromosomes`, from 0 |
+| `name`  | `string` | the name as the file stores it    |
+| `size`  | `number` | length in bp                      |
 
 ## `getContactRecords(normalization, region1, region2, units, binsize, opts?)`
 
@@ -62,17 +68,29 @@ The main read. `region1` is the x axis and `region2` the y axis; a region is
 `{ onProgress, signal }` — see [Progress](#progress) and
 [Cancellation](#cancellation).
 
-```ts
-{
-  records: {
-    bin1: Int32Array // bin index along region1's chromosome
-    bin2: Int32Array // bin index along region2's chromosome
-    counts: Float32Array // contact count, normalized if a vector applied
-  }
-  appliedNormalization: string
-  transposed: boolean
-}
-```
+A `HicRegion` has these fields:
+
+| field   | type     | description     |
+| ------- | -------- | --------------- |
+| `chr`   | `string` | chromosome name |
+| `start` | `number` | 0-based start   |
+| `end`   | `number` | end, exclusive  |
+
+The call resolves to an object with these fields:
+
+| field                  | type             | description                                                                 |
+| ---------------------- | ---------------- | --------------------------------------------------------------------------- |
+| `records`              | `ContactRecords` | the contacts, as parallel arrays                                            |
+| `appliedNormalization` | `string`         | the normalization requested, or `'NONE'` when the file has no vector for it |
+| `transposed`           | `boolean`        | `true` when the reader swapped the regions, so `bin1` runs along `region2`  |
+
+`ContactRecords` holds three arrays:
+
+| field    | type           | description                                   |
+| -------- | -------------- | --------------------------------------------- |
+| `bin1`   | `Int32Array`   | bin index along region1's chromosome          |
+| `bin2`   | `Int32Array`   | bin index along region2's chromosome          |
+| `counts` | `Float32Array` | contact count, normalized if a vector applied |
 
 The three arrays are parallel and always exactly the same length —
 `bin1.length` is the record count. Bin indices are absolute for their

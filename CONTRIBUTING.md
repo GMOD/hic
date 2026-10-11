@@ -15,6 +15,11 @@ a script — `--run` is the one-shot form CI and `preversion` use.
 test data. The suites that read it pin real contact counts, so a parse change
 that alters output fails loudly.
 
+[docs/api.md](docs/api.md) is written by hand, and `test/apiDocs.test.ts` fails
+when a public member of `HicFile`, its config and result types, or an export, is
+missing from it. Document the new member, or add it to the test's `undocumented`
+list with the reason it is internal.
+
 Use `pnpm version patch/minor/major` to release — it runs lint, format, types,
 tests and build, regenerates CHANGELOG.md with git-cliff, then pushes the
 version tag which triggers the publish workflow.
