@@ -1,3 +1,15 @@
+## [1.3.2](https://github.com/GMOD/hic/compare/v1.3.1...v1.3.2) (2026-10-11)
+
+### Documentation
+
+- Plainer README wording ([5de84bc](https://github.com/GMOD/hic/commit/5de84bcd8488df93c10db971e47c46604f7d4a00))
+- Say which contacts a normalization leaves out ([54b0347](https://github.com/GMOD/hic/commit/54b0347554f4fba98e8f4f6a9a8e0b1270ec02a5))
+- Break up README walls of text ([f08c26e](https://github.com/GMOD/hic/commit/f08c26eedce2d4de107f5addd5c8c6ff251cb71a))
+
+### Tests
+
+- Fail when docs/api.md misses a public member or export ([bb35c60](https://github.com/GMOD/hic/commit/bb35c60bea584ec73356b93ae603690bdf289fe4))
+
 ## [1.3.1](https://github.com/GMOD/hic/compare/v1.3.0...v1.3.1) (2026-10-09)
 
 ### Chores
