@@ -12,13 +12,7 @@ test('parses real .hic file', async () => {
 
   const res = meta.resolutions[0]!
   const r = { chr: '1', start: 0, end: res * 200 }
-  const { records: recs } = await straw.getContactRecords(
-    'NONE',
-    r,
-    r,
-    'BP',
-    res,
-  )
+  const { records: recs } = await straw.getContactRecords('NONE', r, r, res)
   expect(recs.bin1.length).toBe(3957)
   // the three arrays are parallel and always exactly the same length
   expect(recs.bin2.length).toBe(3957)
@@ -30,7 +24,7 @@ test('parses real .hic file', async () => {
   expect(norms).toEqual(['NONE', 'VC', 'VC_SQRT', 'KR', 'SCALE'])
 
   // exercise KR normalization (reads norm vector index for v8 file)
-  const kr = await straw.getContactRecords('KR', r, r, 'BP', res)
+  const kr = await straw.getContactRecords('KR', r, r, res)
   expect(kr.records.bin1.length).toBeGreaterThan(0)
   expect(kr.appliedNormalization).toBe('KR')
 
@@ -42,7 +36,6 @@ test('parses real .hic file', async () => {
     'NONE',
     offset,
     offset,
-    'BP',
     res,
   )
   expect([...offsetRecs.bin1]).toContain(0)

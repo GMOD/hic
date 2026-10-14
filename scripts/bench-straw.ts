@@ -54,13 +54,7 @@ async function fetchAllOurs(hic: HicFile, binsize: number) {
   await Promise.all(
     pairs.map(async ([r1, r2]) => {
       try {
-        const { records } = await hic.getContactRecords(
-          'KR',
-          r1,
-          r2,
-          'BP',
-          binsize,
-        )
+        const { records } = await hic.getContactRecords('KR', r1, r2, binsize)
         contacts += records.bin1.length
       } catch {
         // No data at this resolution for that pair.

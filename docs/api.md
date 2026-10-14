@@ -59,10 +59,11 @@ Each `Chromosome` has these fields:
 | `name`  | `string` | the name as the file stores it    |
 | `size`  | `number` | length in bp                      |
 
-## `getContactRecords(normalization, region1, region2, units, binsize, opts?)`
+## `getContactRecords(normalization, region1, region2, binsize, opts?)`
 
 `getContactRecords` is the main read. `region1` is the x axis and `region2` the y axis; a region is
-`{ chr, start, end }` with 0-based half-open coordinates. `units` is `'BP'`.
+`{ chr, start, end }` with 0-based half-open coordinates, and `chr` must match
+a name in `getMetaData().chromosomes` exactly. `binsize` is in base pairs.
 `normalization` is one of `getNormalizationOptions()`, or `'NONE'`. `opts` is
 `{ onProgress, signal }` — see [Progress](#progress) and
 [Cancellation](#cancellation).
@@ -124,9 +125,6 @@ only the `bin1 <= bin2` half of the matrix. When it is true, `bin1` runs along
 is to the right of `region2`, meaning a higher chromosome index, or the same
 chromosome and a later start.
 
-An alias table built from the file's own names resolves chromosome names, so
-`'1'` and `'chr1'` both work whichever the file uses.
-
 `getContactRecords` throws an error beginning with `NO_DATA_FOR_RESOLUTION`
 (exported) if the region pair has a matrix but no data at `binsize`. A caller
 fetching many pairs at once will usually want to drop that pair rather than fail
@@ -155,7 +153,7 @@ by phase, but a caller can render `current / total` without knowing which unit
 it is.
 
 ```ts
-await hic.getContactRecords('KR', region, region, 'BP', 100_000, {
+await hic.getContactRecords('KR', region, region, 100_000, {
   onProgress: (current, total) => {
     setLabel(`Downloading contacts ${Math.round((current / total) * 100)}%`)
   },
@@ -205,7 +203,7 @@ constructor, so a constructor signal no longer cancels them.
 
 `HicFile` also exposes lower-level methods, which are public for callers who
 need them but are not the intended entry point: `init`, `getMatrix`, `getBlocks`, `readBlock`,
-`getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`. Each async
+`getNormalizationVector`, `getNormVectorIndex`. Each async
 one takes an optional trailing `{ signal }`; `getBlocks` and
 `getNormVectorIndex` also take `{ onProgress }`.
 

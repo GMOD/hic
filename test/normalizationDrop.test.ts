@@ -12,7 +12,7 @@ function whole(chr: string): HicRegion {
 }
 
 async function factors(hic: HicFile, norm: string, chr: string) {
-  const nv = await hic.getNormalizationVector(norm, chr, 'BP', RES)
+  const nv = await hic.getNormalizationVector(norm, chr, RES)
   return nv!.getValues(0, 1000)
 }
 
@@ -24,13 +24,7 @@ async function expected(
   chr1: string,
   chr2: string,
 ) {
-  const raw = await hic.getContactRecords(
-    'NONE',
-    whole(chr1),
-    whole(chr2),
-    'BP',
-    RES,
-  )
+  const raw = await hic.getContactRecords('NONE', whole(chr1), whole(chr2), RES)
   const v1 = await factors(hic, norm, chr1)
   const v2 = await factors(hic, norm, chr2)
   const kept = new Map<string, number>()
@@ -49,13 +43,7 @@ async function expected(
 }
 
 async function actual(hic: HicFile, norm: string, chr1: string, chr2: string) {
-  const res = await hic.getContactRecords(
-    norm,
-    whole(chr1),
-    whole(chr2),
-    'BP',
-    RES,
-  )
+  const res = await hic.getContactRecords(norm, whole(chr1), whole(chr2), RES)
   const { bin1, bin2, counts } = res.records
   const kept = new Map<string, number>()
   for (let i = 0; i < bin1.length; i++) {

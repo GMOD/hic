@@ -80,7 +80,6 @@ test('contacts decode from such a file, normalization request and all', async ()
     'KR',
     r,
     r,
-    'BP',
     RES,
   )
   expect(records.bin1.length).toBe(3957)

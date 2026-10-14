@@ -70,7 +70,7 @@ test('a contact fetch ticks once per block', async () => {
   const hic = open()
   const { ticks, onProgress } = ticker()
 
-  const { records } = await hic.getContactRecords('KR', CHR1, CHR1, 'BP', RES, {
+  const { records } = await hic.getContactRecords('KR', CHR1, CHR1, RES, {
     onProgress,
   })
 
@@ -91,10 +91,10 @@ test('a contact fetch ticks once per block', async () => {
 // reused most of its blocks.
 test('cached blocks count as done', async () => {
   const hic = open()
-  await hic.getContactRecords('KR', CHR1, CHR1, 'BP', RES)
+  await hic.getContactRecords('KR', CHR1, CHR1, RES)
   const repeat = ticker()
 
-  await hic.getContactRecords('KR', CHR1, CHR1, 'BP', RES, {
+  await hic.getContactRecords('KR', CHR1, CHR1, RES, {
     onProgress: repeat.onProgress,
   })
 
@@ -102,7 +102,7 @@ test('cached blocks count as done', async () => {
   expect(repeat.ticks).toEqual([[6, 6]])
 
   const pan = ticker()
-  await hic.getContactRecords('KR', WIDER, WIDER, 'BP', RES, {
+  await hic.getContactRecords('KR', WIDER, WIDER, RES, {
     onProgress: pan.onProgress,
   })
 
@@ -119,7 +119,7 @@ test('progress only ever moves forward', async () => {
   const hic = open()
   const { ticks, onProgress } = ticker()
 
-  await hic.getContactRecords('KR', CHR1, CHR1, 'BP', RES, { onProgress })
+  await hic.getContactRecords('KR', CHR1, CHR1, RES, { onProgress })
 
   const currents = ticks.map(([current]) => current)
   expect(currents).toEqual([...currents].sort((a, b) => a - b))

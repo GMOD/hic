@@ -202,8 +202,7 @@ export class HicFile {
   normExpectedValueVectorsPosition: number | undefined
 
   private chromosomes: Chromosome[] = []
-  private chromosomeIndexMap: Record<string, number> = {}
-  private chrAliasTable: Record<string, string> = {}
+  private chromosomeIndexMap = new Map<string, number>()
   private bpResolutions: number[] = []
   private masterIndex: Record<string, MasterIndexEntry> = {}
   private meta: HicMetadata | undefined
@@ -281,7 +280,7 @@ export class HicFile {
     }
 
     const chromosomes: Chromosome[] = []
-    const chromosomeIndexMap: Record<string, number> = {}
+    const chromosomeIndexMap = new Map<string, number>()
     let nChrs = binaryParser.getInt()
     let i = 0
     while (nChrs-- > 0) {
@@ -291,7 +290,7 @@ export class HicFile {
         size: version < 9 ? binaryParser.getInt() : binaryParser.getLong(),
       }
       chromosomes.push(chr)
-      chromosomeIndexMap[chr.name] = chr.index
+      chromosomeIndexMap.set(chr.name, chr.index)
       i++
     }
 
@@ -299,17 +298,6 @@ export class HicFile {
     let nBpResolutions = binaryParser.getInt()
     while (nBpResolutions-- > 0) {
       bpResolutions.push(binaryParser.getInt())
-    }
-
-    const chrAliasTable: Record<string, string> = {}
-    for (const chrName of Object.keys(chromosomeIndexMap)) {
-      if (chrName.startsWith('chr')) {
-        chrAliasTable[chrName.slice(3)] = chrName
-      } else if (chrName === 'MT') {
-        chrAliasTable.chrM = chrName
-      } else {
-        chrAliasTable[`chr${chrName}`] = chrName
-      }
     }
 
     throwIfAborted(signal)
@@ -323,7 +311,6 @@ export class HicFile {
     this.chromosomes = chromosomes
     this.chromosomeIndexMap = chromosomeIndexMap
     this.bpResolutions = bpResolutions
-    this.chrAliasTable = chrAliasTable
     this.meta = {
       version,
       genome: genomeId,
@@ -396,14 +383,13 @@ export class HicFile {
     normalization: string,
     region1: HicRegion,
     region2: HicRegion,
-    units: string,
     binsize: number,
     opts?: ProgressOpts,
   ) {
     await this.init(opts)
 
-    const idx1 = this.chromosomeIndexMap[this.getFileChrName(region1.chr)]
-    const idx2 = this.chromosomeIndexMap[this.getFileChrName(region2.chr)]
+    const idx1 = this.chromosomeIndexMap.get(region1.chr)
+    const idx2 = this.chromosomeIndexMap.get(region2.chr)
 
     // A `.hic` stores only `bin1 <= bin2`, so a query whose x window sits to the
     // right of its y window has to be swapped or it asks for the half of the
@@ -443,7 +429,7 @@ export class HicFile {
     // resolved once per pair rather than per block, each paired with the bin
     // offset its values start at.
     const [norm, blocks] = await Promise.all([
-      this.getNormVectors(normalization, r1, r2, units, binsize, opts),
+      this.getNormVectors(normalization, r1, r2, binsize, opts),
       // The measurable half of the pair: blocks are counted and the two norm
       // vectors are not, because the vector chain is two hops whatever the
       // query and the block chain is the one that grows with the region.
@@ -521,9 +507,8 @@ export class HicFile {
     //
     // `transposed` says the query was swapped, so `bin1` runs along `region2`.
     // Reported rather than left for the caller to re-derive: it is decided here
-    // from this file's own alias table and chromosome indices, and a caller
-    // re-deriving it off a divergent chr-name scheme would silently un-swap the
-    // wrong axis.
+    // from this file's chromosome indices, which a caller would otherwise have
+    // to look up again to know which axis to un-swap.
     return {
       records: contactRecords,
       appliedNormalization: norm ? normalization : 'NONE',
@@ -535,7 +520,6 @@ export class HicFile {
     normalization: string,
     r1: HicRegion,
     r2: HicRegion,
-    units: string,
     binsize: number,
     opts?: BaseOpts,
   ) {
@@ -548,20 +532,8 @@ export class HicFile {
     // Awaited in sequence, an inter-chromosomal pair would pay four
     // round-trip waves for what is two hops per vector.
     const [nv1, nv2] = await Promise.all([
-      this.getNormalizationVector(
-        normalization,
-        r1.chr,
-        units,
-        binsize,
-        signalOpts,
-      ),
-      this.getNormalizationVector(
-        normalization,
-        r2.chr,
-        units,
-        binsize,
-        signalOpts,
-      ),
+      this.getNormalizationVector(normalization, r1.chr, binsize, signalOpts),
+      this.getNormalizationVector(normalization, r2.chr, binsize, signalOpts),
     ])
     if (!nv1 || !nv2) {
       return undefined
@@ -583,10 +555,8 @@ export class HicFile {
       `${zd.getKey()}_${blockNumber}`
 
     await this.init(opts)
-    const chr1 = this.getFileChrName(region1.chr)
-    const chr2 = this.getFileChrName(region2.chr)
-    const idx1 = this.chromosomeIndexMap[chr1]
-    const idx2 = this.chromosomeIndexMap[chr2]
+    const idx1 = this.chromosomeIndexMap.get(region1.chr)
+    const idx2 = this.chromosomeIndexMap.get(region2.chr)
 
     let blocks: (Block | undefined)[] = []
     if (idx1 === undefined) {
@@ -772,17 +742,16 @@ export class HicFile {
   async getNormalizationVector(
     type: string,
     chr: string,
-    unit: string,
     binSize: number,
     opts?: BaseOpts,
   ) {
     await this.init(opts)
 
-    const chrIdx = this.chromosomeIndexMap[this.getFileChrName(chr)]
+    const chrIdx = this.chromosomeIndexMap.get(chr)
     if (chrIdx === undefined) {
       return undefined
     }
-    const key = getNormalizationVectorKey(type, chrIdx, unit, binSize)
+    const key = getNormalizationVectorKey(type, chrIdx, 'BP', binSize)
 
     // Sharing the in-flight read is what keeps concurrent region pairs sharing
     // one vector: a chromosome appears in every pair it takes part in, so with a
@@ -1016,9 +985,5 @@ export class HicFile {
       index.types.push(type)
     }
     index.entries[key] = { filePosition, size: sizeInBytes }
-  }
-
-  getFileChrName(chrAlias: string) {
-    return this.chrAliasTable[chrAlias] ?? chrAlias
   }
 }

@@ -34,7 +34,6 @@ test('a region past the end of the chromosome answers empty, not RangeError', as
     'KR',
     region(CHR1_SIZE + 150_000_000),
     region(CHR1_SIZE + 150_000_000),
-    'BP',
     RES,
   )
 
@@ -53,11 +52,21 @@ test('an in-range fetch still works after an out-of-range one', async () => {
     'KR',
     region(CHR1_SIZE + 150_000_000),
     region(CHR1_SIZE + 150_000_000),
-    'BP',
     RES,
   )
   const whole: HicRegion = { chr: '1', start: 0, end: CHR1_SIZE }
-  const { records } = await hic.getContactRecords('KR', whole, whole, 'BP', RES)
+  const { records } = await hic.getContactRecords('KR', whole, whole, RES)
 
   expect(records.bin1.length).toBe(60109)
 })
+
+// Names match the file's own exactly. JBrowse renames a region to the file's
+// name through `getRefNames` before it asks, so the parser does no aliasing.
+test.each(['chr1', 'constructor'])(
+  'a chromosome the file does not name, %s, answers empty',
+  async chr => {
+    const r: HicRegion = { chr, start: 0, end: 10 * RES }
+    const { records } = await open().getContactRecords('KR', r, r, RES)
+    expect(records.bin1.length).toBe(0)
+  },
+)

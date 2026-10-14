@@ -37,7 +37,6 @@ async function records(region1: HicRegion, region2: HicRegion) {
     'NONE',
     region1,
     region2,
-    'BP',
     RES,
   )
   return {

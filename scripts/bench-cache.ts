@@ -62,7 +62,7 @@ async function fetchAll(hic: HicFile, pairs: [HicRegion, HicRegion][]) {
   await Promise.all(
     pairs.map(async ([r1, r2]) => {
       try {
-        return await hic.getContactRecords('KR', r1, r2, 'BP', BINSIZE)
+        return await hic.getContactRecords('KR', r1, r2, BINSIZE)
       } catch {
         // A pair with no data at this resolution is normal at whole-genome
         // scale and still costs the reads that discovered it.

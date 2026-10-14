@@ -38,7 +38,7 @@ function fileWithDiagonalBins(n: number) {
   })
   Object.assign(file as unknown as Record<string, unknown>, {
     init: () => Promise.resolve(),
-    chromosomeIndexMap: { '1': 0 },
+    chromosomeIndexMap: new Map([['1', 0]]),
     getBlocks: () => Promise.resolve([{ blockNumber: 0, records }]),
   })
   return file
@@ -49,7 +49,6 @@ async function binsIn(region: HicRegion, binsize: number) {
     'NONE',
     region,
     region,
-    'BP',
     binsize,
   )
   return [...records.bin1]

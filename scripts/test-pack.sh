@@ -59,7 +59,7 @@ if (typeof NO_DATA_FOR_RESOLUTION !== 'string') {
 const hic = new HicFile({ filehandle: new LocalFile('$FIXTURE') })
 const region = { chr: '1', start: 0, end: 249250621 }
 const { records, appliedNormalization } =
-  await hic.getContactRecords('KR', region, region, 'BP', 2500000)
+  await hic.getContactRecords('KR', region, region, 2500000)
 if (records.bin1.length !== 3957) {
   throw new Error(\`esm: \${records.bin1.length} contacts, expected 3957\`)
 }
@@ -79,7 +79,7 @@ const { HicFile, NO_DATA_FOR_RESOLUTION } = require('@gmod/hic')
   const hic = new HicFile({ filehandle: new LocalFile('$FIXTURE') })
   const region = { chr: '1', start: 0, end: 249250621 }
   const { records } =
-    await hic.getContactRecords('KR', region, region, 'BP', 2500000)
+    await hic.getContactRecords('KR', region, region, 2500000)
   if (records.bin1.length !== 3957) {
     throw new Error(\`cjs: \${records.bin1.length} contacts, expected 3957\`)
   }

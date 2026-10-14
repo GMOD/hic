@@ -49,7 +49,6 @@ interface PrivateChains {
     normalization: string,
     r1: HicRegion,
     r2: HicRegion,
-    units: string,
     binsize: number,
   ) => Promise<unknown>
 }
@@ -73,7 +72,7 @@ async function warmFile() {
 test('a region pair costs the DEEPER of its two read chains, not their sum', async () => {
   const { hic, state } = await warmFile()
   const r = region('1')
-  await hic.getContactRecords('KR', r, r, 'BP', RES)
+  await hic.getContactRecords('KR', r, r, RES)
 
   // Two hops: the two chains overlap, so the pair costs one chain's depth.
   // Awaiting them in sequence — which is what this file used to do — makes it 4,
@@ -95,7 +94,6 @@ test.each([
         'KR',
         region('3'),
         region('3'),
-        'BP',
         RES,
       ),
   ],
@@ -110,12 +108,12 @@ test('a cold open pays the header walk once, not per pair', async () => {
   const file = batchingReader(await openTestHicInMemory())
   const hic = new HicFile({ reader: file })
   const r = region('1')
-  await hic.getContactRecords('KR', r, r, 'BP', RES)
+  await hic.getContactRecords('KR', r, r, RES)
   const cold = file.state.waves
 
   file.state.waves = 0
   const r2 = region('2')
-  await hic.getContactRecords('KR', r2, r2, 'BP', RES)
+  await hic.getContactRecords('KR', r2, r2, RES)
   // a different chromosome, so nothing about this pair is cached except the
   // header and the normalization index — which is the whole difference
   expect(file.state.waves).toBe(2)
@@ -128,7 +126,6 @@ test('an inter-chromosomal pair fetches both vectors in the same waves', async (
     'KR',
     region('1'),
     region('2'),
-    'BP',
     RES,
   )
   expect(state.waves).toBe(2)

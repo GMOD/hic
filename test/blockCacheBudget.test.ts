@@ -35,9 +35,9 @@ async function repeatFetchReads(
 ) {
   const file = countingReader(openTestHic())
   const hic = new HicFile({ reader: file, blockCacheMaxBytes })
-  const first = await hic.getContactRecords('KR', r, r, 'BP', RES)
+  const first = await hic.getContactRecords('KR', r, r, RES)
   file.state.reads = 0
-  const second = await hic.getContactRecords('KR', r, r, 'BP', RES)
+  const second = await hic.getContactRecords('KR', r, r, RES)
   return { reads: file.state.reads, first, second }
 }
 

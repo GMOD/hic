@@ -52,7 +52,6 @@ async function fetchAll(hic: HicFile, binsize: number) {
           'KR',
           r1 as HicRegion,
           r2 as HicRegion,
-          'BP',
           binsize,
         )
       } catch {

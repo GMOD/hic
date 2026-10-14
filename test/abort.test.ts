@@ -66,7 +66,6 @@ async function krCount(hic: HicFile, opts?: BaseOpts) {
     'KR',
     CHR1,
     CHR1,
-    'BP',
     RES,
     opts,
   )
@@ -170,7 +169,7 @@ test('a reader that ignores the signal still cancels once its read lands', async
   await krCount(hic)
   reader.pause()
   const controller = new AbortController()
-  const p = hic.getContactRecords('KR', FAR, FAR, 'BP', RES, {
+  const p = hic.getContactRecords('KR', FAR, FAR, RES, {
     signal: controller.signal,
   })
   await vi.waitFor(() => {
@@ -185,7 +184,7 @@ test('an already-aborted signal reads nothing', async () => {
   const { reader, hic } = await heldFile()
   reader.pause()
   await expect(
-    hic.getContactRecords('KR', CHR1, CHR1, 'BP', RES, {
+    hic.getContactRecords('KR', CHR1, CHR1, RES, {
       signal: AbortSignal.abort(),
     }),
   ).rejects.toMatchObject({ name: 'AbortError' })
@@ -210,14 +209,14 @@ test('every filehandle read of a cold fetch carries a signal', async () => {
 
 test('a caller sharing another caller’s vector read survives that caller aborting', async () => {
   const { reader, hic } = await heldFile()
-  await hic.getContactRecords('KR', FAR, FAR, 'BP', RES)
+  await hic.getContactRecords('KR', FAR, FAR, RES)
   const near: HicRegion = { chr: '1', start: 0, end: 20_000_000 }
   reader.pause()
   const controller = new AbortController()
-  const leaving = hic.getContactRecords('KR', near, near, 'BP', RES, {
+  const leaving = hic.getContactRecords('KR', near, near, RES, {
     signal: controller.signal,
   })
-  const staying = hic.getContactRecords('KR', near, near, 'BP', RES)
+  const staying = hic.getContactRecords('KR', near, near, RES)
   await vi.waitFor(() => {
     expect(reader.held()).toBeGreaterThan(0)
   })
@@ -226,6 +225,6 @@ test('a caller sharing another caller’s vector read survives that caller abort
 
   reader.resume()
   const fresh = new HicFile({ reader: await openTestHicInMemory() })
-  const expected = await fresh.getContactRecords('KR', near, near, 'BP', RES)
+  const expected = await fresh.getContactRecords('KR', near, near, RES)
   expect((await staying).records.counts).toEqual(expected.records.counts)
 })
