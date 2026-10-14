@@ -167,7 +167,7 @@ function getNormalizationVectorKey(
 }
 
 export class HicFile {
-  private config: HicConfig
+  private nvi: string | undefined
   private file: Reader
 
   // These caches share the in-flight read, not just its result. A
@@ -210,8 +210,8 @@ export class HicFile {
   private meta: HicMetadata | undefined
 
   constructor(config: HicConfig) {
-    const { filehandle, path, reader, blockCacheMaxBytes } = config
-    this.config = config
+    const { filehandle, path, reader, nvi, blockCacheMaxBytes } = config
+    this.nvi = nvi
     this.blockCache = new LRU<string, Block>(BLOCK_CACHE_MAX_ENTRIES, {
       maxBytes: blockCacheMaxBytes ?? BLOCK_CACHE_MAX_BYTES,
       weigh: blockCacheWeight,
@@ -855,8 +855,8 @@ export class HicFile {
         },
         opts.signal,
       )
-    } else if (this.config.nvi) {
-      const nviArray = decodeURIComponent(this.config.nvi).split(',')
+    } else if (this.nvi) {
+      const nviArray = decodeURIComponent(this.nvi).split(',')
       return this.readNormVectorIndex(
         {
           start: parseInt(nviArray[0]!),
@@ -910,41 +910,28 @@ export class HicFile {
         this.normExpectedValueVectorsPosition,
         opts,
       )
-      let byteCount = INT
-
-      let data = await this.file.read(nviStart, INT, { signal })
+      const data = await this.file.read(nviStart, INT, { signal })
       // Possible if there are no norm vectors. A legal v8 file, though uncommon.
       if (data.byteLength !== 0) {
-        const binaryParser = new BinaryParser(new DataView(data))
-        const nEntries = binaryParser.getInt()
-        const sizeEstimate = nEntries * 30
-        data = await this.file.read(nviStart + byteCount, sizeEstimate, {
-          signal,
-        })
+        const nEntries = new BinaryParser(new DataView(data)).getInt()
         const found: NormVectorIndex = { entries: {}, types: ['NONE'] }
 
-        const processEntries = async (remaining: number, buf: ArrayBuffer) => {
-          const parser = new BinaryParser(new DataView(buf))
-          let n = remaining
-          while (n-- > 0) {
-            if (parser.available() < 100) {
-              n++ // Reset counter as entry is not processed
-              byteCount += parser.position
-              const est = Math.max(1000, n * 30)
-              const more = await this.file.read(nviStart + byteCount, est, {
-                signal,
-              })
-              await processEntries(n, more)
-              return
-            }
-            this.parseNormVectorEntry(parser, found)
+        let position = nviStart + INT
+        let requested = nEntries * 30
+        let buf = await this.file.read(position, requested, { signal })
+        let parser = new BinaryParser(new DataView(buf))
+        for (let n = nEntries; n > 0; n--) {
+          // A short read means the buffer already runs to EOF, and refilling
+          // it would only return the same bytes again.
+          if (parser.available() < 100 && buf.byteLength === requested) {
+            position += parser.position
+            requested = Math.max(1000, n * 30)
+            buf = await this.file.read(position, requested, { signal })
+            parser = new BinaryParser(new DataView(buf))
           }
-          byteCount += parser.position
+          this.parseNormVectorEntry(parser, found)
         }
-
-        await processEntries(nEntries, data)
         throwIfAborted(signal)
-        this.config.nvi = `${nviStart},${byteCount}`
         index = found
       }
     }
@@ -1027,7 +1014,7 @@ export class HicFile {
     const filePosition = binaryParser.getLong() // 8
     const sizeInBytes =
       this.version < 9 ? binaryParser.getInt() : binaryParser.getLong() // 4:8
-    const key = `${type}_${chrIdx}_${unit}_${binSize}`
+    const key = getNormalizationVectorKey(type, chrIdx, unit, binSize)
 
     if (!index.types.includes(type)) {
       index.types.push(type)
