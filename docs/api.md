@@ -14,13 +14,13 @@ Pass exactly one of `filehandle`, `path` or `reader`. A `HicFile` reads nothing
 until the first call. Every caller that arrives while the header parse is in
 flight shares that parse, and the next call after a failure parses again.
 
-`nvi` is optional and applies to pre-v9 files, which do not record where their
-normalization vector index is. Without it, the parser finds that position by
-walking the expected-value vectors, a chain of small sequential reads that runs
-once per file. A v9 file records the position in its header, so the parser
-skips the walk.
+`nvi` is optional and only matters for pre-v9 files, which do not record where
+their normalization vector index is. Without it, the parser finds that position
+by walking the expected-value vectors — a chain of small sequential reads,
+incurred once per file. A v9 file records the position in its header, so the
+parser skips the walk.
 
-### Caches
+### What a file holds in memory
 
 Each `HicFile` instance has three caches:
 
@@ -130,9 +130,9 @@ An alias table built from the file's own names resolves chromosome names, so
 
 `getContactRecords` throws an error beginning with `NO_DATA_FOR_RESOLUTION`
 (exported) if the region pair has a matrix but no data at `binsize`. A caller
-fetching many pairs at once usually wants to drop that pair rather than fail the
-whole fetch, so the package exports the constant for callers to match against
-instead of copying the string.
+fetching many pairs at once will usually want to drop that pair rather than fail
+the whole fetch, which is why the package exports the constant instead of
+leaving callers to hand-copy the string.
 
 A chromosome pair with no matrix at all — plenty of files store no
 inter-chromosomal maps — returns no records instead of throwing.

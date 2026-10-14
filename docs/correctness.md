@@ -23,10 +23,10 @@ bin produces a non-integer `[x1, x2)` window with no integer bin1 inside it.
 **Measured:** `chr1:100,500,000-100,600,000` at 2.5 Mb binsize (a 100 kb
 region, one bin wide) — hic-straw returns **0** records, this package
 returns **1**. On wider regions, the same fractional window also drops the bin
-straddling a region's start while keeping the one at its end, which appears as
-a missing column at the left edge of every block as a viewport pans.
+straddling a region's start while keeping the one at its end, which reads as a
+missing column at the left edge of every block as a viewport pans.
 
-`binWindow` in this package returns
+This package's `binWindow` returns
 `[floor(start/binsize), ceil(end/binsize))`, which includes every bin
 overlapping the region. The package already rounds the normalization-vector
 slice for the same query this way.
@@ -39,15 +39,15 @@ swapped before the read. hic-straw's swap test is
 [`region1.start >= region2.end`, L332](https://github.com/igvteam/hic-straw/blob/v2.1.4/src/hicFile.js#L332),
 which only holds while the two regions are disjoint.
 
-**Measured:** chr1 at 2.5 Mb, querying `(100-200 Mb, 50-150 Mb)` (a
-multi-region view is free to ask for two overlapping windows in screen order),
+**Measured:** chr1 at 2.5 Mb, querying `(100-200 Mb, 50-150 Mb)` — a
+multi-region view is free to ask for two overlapping windows in screen order —
 returns 78 contacts from hic-straw, against 901 for the same pair asked in
-genomic order. The result loses every contact outside the overlap, and a viewer
-draws it as a sparse off-diagonal block, with no error.
+genomic order. Everything but the overlap sliver goes missing, which renders as
+a sparse off-diagonal block rather than as an error.
 
-This package swaps on `region1.start > region2.start` instead (on the same
-chromosome), which catches the overlapping case too and leaves a pair in
-forward order, or an identical pair, unswapped.
+This package tests `region1.start > region2.start` instead (on the same
+chromosome), which fires on the overlapping case too and leaves forward order
+and an identical pair alone.
 
 ## A v8 file with no normalization data throws mid-parse
 

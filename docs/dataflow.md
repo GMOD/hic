@@ -4,7 +4,7 @@ A `.hic` file records how often two genome stretches touch inside the
 nucleus. A fetch returns, for two regions at one resolution, how many contacts
 join each pair of positions.
 
-## Terms on the diagram
+## The words on the diagram
 
 - **Bin** — a fixed-width window (the `binsize`: 2.5 Mb, 100 kb, 5 kb) a
   contact is filed under by its two ends, not its exact coordinates. A file
@@ -50,8 +50,8 @@ round trips.
 ## Why so much of it is yellow
 
 Yellow nodes mark the steps a fetch's pairs share. The parser fetches a
-chromosome's normalization vector once whatever the pair count, and a
-chromosome pair's matrix once whatever the block count. The caching strategy
+chromosome's normalization vector once regardless of pair count, and a
+chromosome pair's matrix once regardless of block count. The caching strategy
 behind that, and its numbers, are in
 [optimizations.md](optimizations.md#caches-sized-to-the-region-pair-working-set).
 
@@ -75,7 +75,7 @@ Contacts come back as three parallel typed arrays — `bin1`, `bin2`,
 `counts` — each sized to the record count
 ([optimizations.md](optimizations.md#contacts-are-struct-of-arrays)).
 
-## Decompression
+## Where decompression sits
 
 Decompression is the one CPU-bound step, drawn in the wasm-orange that the
 sibling parsers' diagrams also use. What it costs, and why wasm over pako or `DecompressionStream`, is in

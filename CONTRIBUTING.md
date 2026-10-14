@@ -20,7 +20,7 @@ when a public member of `HicFile`, its config and result types, or an export, is
 missing from it. Document the new member, or add it to the test's `undocumented`
 list with the reason it is internal.
 
-Use `pnpm version patch/minor/major` to release. It runs lint, format, types,
+Use `pnpm version patch/minor/major` to release — it runs lint, format, types,
 tests and build, regenerates CHANGELOG.md with git-cliff, then pushes the
 version tag, which triggers the publish workflow.
 
