@@ -546,8 +546,8 @@ export class HicFile {
     const signalOpts = { signal: opts?.signal }
     const [offset1, end1] = binWindow(r1, binsize)
     const [offset2, end2] = binWindow(r2, binsize)
-    // Concurrent, not in sequence: an inter-chromosomal pair otherwise pays
-    // four round-trip waves for what is two hops per vector.
+    // Awaited in sequence, an inter-chromosomal pair would pay four
+    // round-trip waves for what is two hops per vector.
     const [nv1, nv2] = await Promise.all([
       this.getNormalizationVector(
         normalization,

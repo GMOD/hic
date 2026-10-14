@@ -58,8 +58,8 @@ export default class NormalizationVector {
     try {
       values = await cache.values
     } catch (e) {
-      // A joined read carries the signal of whichever pair started it, so its
-      // abort is no reason to fail this caller.
+      // The pair that started a joined read passed its own signal, so that
+      // pair aborting says nothing about this caller.
       if (!joined || opts?.signal?.aborted) {
         throw e
       }
