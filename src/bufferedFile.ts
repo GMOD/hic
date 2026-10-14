@@ -41,30 +41,16 @@ export default class BufferedFile {
       // Request within buffer bounds
       const sliceStart = start - bufferStart
       result = buf.slice(sliceStart, sliceStart + length)
-    } else if (buf && start < bufferStart && end > bufferStart) {
-      // Overlap left (unexpected in straw); we don't adjust the buffer
-      const l1 = bufferStart - start
-      const a1 = await this.file.read(position, l1, opts)
-      const l2 = length - l1
-      if (l2 > 0) {
-        result = concatBuffers(a1, buf.slice(0, l2))
-      } else {
-        result = a1
-      }
-    } else if (buf && start < bufferEnd && end > bufferEnd) {
-      // Overlap right
+    } else if (buf && start >= bufferStart && start < bufferEnd) {
+      // Overlap right. The expected-values walk only moves forward, so a
+      // request starting before the buffer takes the fresh read below.
       const l1 = bufferEnd - start
       const a1 = buf.slice(this.bufferLength - l1, this.bufferLength)
-      const l2 = length - l1
-      if (l2 > 0) {
-        const next = await this.file.read(bufferEnd, this.size, opts)
-        this.buffer = next
-        this.bufferStart = bufferEnd
-        this.bufferLength = next.byteLength
-        result = concatBuffers(a1, next.slice(0, l2))
-      } else {
-        result = a1
-      }
+      const next = await this.file.read(bufferEnd, this.size, opts)
+      this.buffer = next
+      this.bufferStart = bufferEnd
+      this.bufferLength = next.byteLength
+      result = concatBuffers(a1, next.slice(0, length - l1))
     } else {
       // No overlap with buffer
       const next = await this.file.read(position, this.size, opts)
