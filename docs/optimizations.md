@@ -68,12 +68,12 @@ the same bytes:
 | bare            | **24.0 s** |           225 |
 | range-coalesced |  **1.8 s** |            45 |
 
-The range-coalesced fetch is 13x faster. Every CPU cost on this fetch is under
-100 ms, so the request count sets the wall-clock time. This package takes a
-filehandle rather than adding a cache of its own, and
+Every CPU cost on this fetch is under 100 ms, so the request count sets the
+wall-clock time, and the range-coalesced fetch runs 13x faster. This package
+takes a filehandle rather than adding a cache of its own, so a remote consumer
+needs
 [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
-merges the reads (the README shows the setup). A remote consumer needs the range
-cache.
+to merge the reads (the README shows the setup).
 
 ### Contacts are struct-of-arrays
 
@@ -110,9 +110,9 @@ numbers show the local ceiling rather than the end-to-end gain.
 
 ### Not `DecompressionStream` either
 
-We rejected `DecompressionStream`. Each block is a separate zlib stream, so
-the API's per-call overhead is paid once per block. That makes it 3–7x native
-zlib, slower than wasm throughout, and slower than pako at small block sizes.
+Each block is a separate zlib stream, so `DecompressionStream` pays its
+per-call overhead once per block. That makes it 3–7x native zlib, slower than
+wasm throughout, and slower than pako at small block sizes.
 
 ## Results in place of console logs
 

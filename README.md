@@ -143,4 +143,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release workflow.
 
 ## License
 
-MIT, as is upstream hic-straw. See [LICENSE](LICENSE).
+MIT, as is upstream hic-straw; see [LICENSE](LICENSE).
