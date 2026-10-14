@@ -121,3 +121,15 @@ test('a cold open pays the header walk once, not per pair', async () => {
   expect(file.state.waves).toBe(2)
   expect(cold).toBeGreaterThan(file.state.waves)
 })
+
+test('an inter-chromosomal pair fetches both vectors in the same waves', async () => {
+  const { hic, state } = await warmFile()
+  await (hic as unknown as PrivateChains).getNormVectors(
+    'KR',
+    region('1'),
+    region('2'),
+    'BP',
+    RES,
+  )
+  expect(state.waves).toBe(2)
+})

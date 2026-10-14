@@ -4,9 +4,16 @@ import type { BaseOpts, Reader } from './types.ts'
 
 const DOUBLE = 8
 
+interface CachedValues {
+  start: number
+  end: number
+  values: Promise<Float64Array>
+}
+
 export default class NormalizationVector {
-  private cache:
-    { start: number; end: number; values: Float64Array } | undefined
+  // Holds the in-flight read, so the two concurrent `getValues` calls of a
+  // same-chromosome pair share one read instead of both missing.
+  private cache: CachedValues | undefined
 
   private file: Reader
   private filePosition: number
@@ -25,50 +32,77 @@ export default class NormalizationVector {
     this.dataType = dataType
   }
 
-  async getValues(start: number, end: number, opts?: BaseOpts) {
-    // The read below clamps to `nValues`, so the cache can never cover past it.
-    // Compare against the clamped bound or a request that runs off the end of
-    // the vector — reachable when the assembly's refseq is longer than the size
-    // the `.hic` recorded for that chromosome — leaves `end > cache.end` true
-    // forever, and every call re-reads the same range from the file.
+  async getValues(
+    start: number,
+    end: number,
+    opts?: BaseOpts,
+  ): Promise<Float64Array> {
+    // The read clamps to `nValues`, so the cache can never cover past it.
+    // Comparing against the clamped bound keeps a request running off the end
+    // of the vector (an assembly refseq longer than the `.hic` recorded) from
+    // missing forever.
     const wanted = Math.min(end, this.nValues)
-    if (!this.cache || start < this.cache.start || wanted > this.cache.end) {
-      const adjustedEnd = Math.min(this.nValues, end + 1000)
-      // Clamped against `adjustedEnd`, and not merely against zero, or a window
-      // starting past the vector produces a NEGATIVE `n` — and a negative read
-      // length reaches the reader as `new Uint8Array(-8)`, a RangeError that
-      // fails the whole fetch instead of the empty answer the caller below
-      // already handles. The padding is what sets how far past is far enough:
-      // more than 1000 bins, which at a fine binsize is not far at all.
-      //
-      // Reachable exactly where the comment above says: the assembly's refseq
-      // is longer than the size the `.hic` recorded for that chromosome, so a
-      // view of the tail of it asks for bins the vector never had.
-      const adjustedStart = Math.min(Math.max(0, start - 1000), adjustedEnd)
-      const startPosition = this.filePosition + adjustedStart * this.dataType
-      const n = adjustedEnd - adjustedStart
-      // Nothing to read when the window is entirely past the vector, and on a
-      // remote file a zero-length range request is still a round trip — one per
-      // region pair, on every fetch, for as long as the view stays there.
-      const data =
-        n > 0
-          ? await this.file.read(startPosition, n * this.dataType, opts)
-          : new ArrayBuffer(0)
-      const parser = new BinaryParser(new DataView(data))
-      const values = new Float64Array(n)
-      for (let i = 0; i < n; i++) {
-        values[i] =
-          this.dataType === DOUBLE ? parser.getDouble() : parser.getFloat()
+    let cache = this.cache
+    const joined = !!cache && start >= cache.start && wanted <= cache.end
+    if (!cache || !joined) {
+      cache = this.readRange(start, end, opts)
+      this.cache = cache
+      const pending = cache
+      pending.values.catch(() => {
+        if (this.cache === pending) {
+          this.cache = undefined
+        }
+      })
+    }
+    let values: Float64Array
+    try {
+      values = await cache.values
+    } catch (e) {
+      // A joined read carries the signal of whichever pair started it, so its
+      // abort is no reason to fail this caller.
+      if (!joined || opts?.signal?.aborted) {
+        throw e
       }
-      this.cache = { start: adjustedStart, end: adjustedEnd, values }
+      return this.getValues(start, end, opts)
     }
 
-    // A view, not a copy: the caller only reads it, and a fetch asks for one of
-    // these per chromosome per region pair. Both this and `slice` clamp a
-    // request running past the end to what exists, which the caller already
-    // handles — an out-of-range index reads undefined, making the product NaN,
-    // which the record filter drops.
-    const sliceStart = start - this.cache.start
-    return this.cache.values.subarray(sliceStart, sliceStart + (end - start))
+    // A view, not a copy. Both this and `subarray` clamp a request running past
+    // the end; an out-of-range index reads undefined, the product goes NaN, and
+    // the record filter drops it.
+    const sliceStart = start - cache.start
+    return values.subarray(sliceStart, sliceStart + (end - start))
+  }
+
+  private readRange(start: number, end: number, opts?: BaseOpts): CachedValues {
+    const adjustedEnd = Math.min(this.nValues, end + 1000)
+    // Clamped against `adjustedEnd` too, or a window starting past the vector
+    // gives a negative read length, which the reader turns into a RangeError
+    // instead of the empty answer the caller handles.
+    const adjustedStart = Math.min(Math.max(0, start - 1000), adjustedEnd)
+    const n = adjustedEnd - adjustedStart
+    return {
+      start: adjustedStart,
+      end: adjustedEnd,
+      values: this.readValues(adjustedStart, n, opts),
+    }
+  }
+
+  private async readValues(start: number, n: number, opts?: BaseOpts) {
+    // A zero-length range request on a remote file is still a round trip.
+    if (n <= 0) {
+      return new Float64Array(0)
+    }
+    const data = await this.file.read(
+      this.filePosition + start * this.dataType,
+      n * this.dataType,
+      opts,
+    )
+    const parser = new BinaryParser(new DataView(data))
+    const values = new Float64Array(n)
+    for (let i = 0; i < n; i++) {
+      values[i] =
+        this.dataType === DOUBLE ? parser.getDouble() : parser.getFloat()
+    }
+    return values
   }
 }

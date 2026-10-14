@@ -540,55 +540,38 @@ export class HicFile {
     binsize: number,
     opts?: BaseOpts,
   ) {
+    if (!normalization || normalization === 'NONE') {
+      return undefined
+    }
     const signalOpts = { signal: opts?.signal }
-    let result:
-      | {
-          v1: Float64Array
-          v2: Float64Array
-          offset1: number
-          offset2: number
-        }
-      | undefined
-    if (normalization && normalization !== 'NONE') {
-      const chr1 = this.getFileChrName(r1.chr)
-      const chr2 = this.getFileChrName(r2.chr)
-      const offset1 = Math.floor(r1.start / binsize)
-      const offset2 = Math.floor(r2.start / binsize)
-      const nv1 = await this.getNormalizationVector(
+    const [offset1, end1] = binWindow(r1, binsize)
+    const [offset2, end2] = binWindow(r2, binsize)
+    // Concurrent, not in sequence: an inter-chromosomal pair otherwise pays
+    // four round-trip waves for what is two hops per vector.
+    const [nv1, nv2] = await Promise.all([
+      this.getNormalizationVector(
         normalization,
-        chr1,
+        r1.chr,
         units,
         binsize,
         signalOpts,
-      )
-      const nv2 =
-        chr1 === chr2
-          ? nv1
-          : await this.getNormalizationVector(
-              normalization,
-              chr2,
-              units,
-              binsize,
-              signalOpts,
-            )
-      if (nv1 && nv2) {
-        result = {
-          v1: await nv1.getValues(
-            offset1,
-            Math.ceil(r1.end / binsize),
-            signalOpts,
-          ),
-          v2: await nv2.getValues(
-            offset2,
-            Math.ceil(r2.end / binsize),
-            signalOpts,
-          ),
-          offset1,
-          offset2,
-        }
-      }
+      ),
+      this.getNormalizationVector(
+        normalization,
+        r2.chr,
+        units,
+        binsize,
+        signalOpts,
+      ),
+    ])
+    if (!nv1 || !nv2) {
+      return undefined
     }
-    return result
+    const [v1, v2] = await Promise.all([
+      nv1.getValues(offset1, end1, signalOpts),
+      nv2.getValues(offset2, end2, signalOpts),
+    ])
+    return { v1, v2, offset1, offset2 }
   }
 
   async getBlocks(

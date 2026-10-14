@@ -207,3 +207,25 @@ test('every filehandle read of a cold fetch carries a signal', async () => {
   await krCount(hic, { signal: new AbortController().signal })
   expect(unsignalled).toEqual([])
 })
+
+test('a caller sharing another caller’s vector read survives that caller aborting', async () => {
+  const { reader, hic } = await heldFile()
+  await hic.getContactRecords('KR', FAR, FAR, 'BP', RES)
+  const near: HicRegion = { chr: '1', start: 0, end: 20_000_000 }
+  reader.pause()
+  const controller = new AbortController()
+  const leaving = hic.getContactRecords('KR', near, near, 'BP', RES, {
+    signal: controller.signal,
+  })
+  const staying = hic.getContactRecords('KR', near, near, 'BP', RES)
+  await vi.waitFor(() => {
+    expect(reader.held()).toBeGreaterThan(0)
+  })
+  controller.abort()
+  await expect(leaving).rejects.toMatchObject({ name: 'AbortError' })
+
+  reader.resume()
+  const fresh = new HicFile({ reader: await openTestHicInMemory() })
+  const expected = await fresh.getContactRecords('KR', near, near, 'BP', RES)
+  expect((await staying).records.counts).toEqual(expected.records.counts)
+})
