@@ -12,8 +12,9 @@ view is 24 regions, 300 pairs), for a GPU renderer. The measurements use
 
 ## Scope
 
-- Input is a filehandle. `RemoteFile`, `ThrottledFile`, `RateLimiter`,
-  `BrowserLocalFile`, and the deprecated local-`path` input are gone;
+- Input is a filehandle, a `Reader`, or a local `path` (Node only), which the
+  package opens with `generic-filehandle2`'s `LocalFile`. `RemoteFile`,
+  `ThrottledFile`, `RateLimiter` and `BrowserLocalFile` are gone, because
   `generic-filehandle2` provides the same file access.
 - This package also drops `nvi.js`, `polygons.js`, `DynamicBlockIndex`, the
   `Straw` wrapper class and FRAG-site handling. The parser reads FRAG zoom
