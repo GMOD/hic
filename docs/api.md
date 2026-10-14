@@ -10,19 +10,19 @@
 | `nvi`                | `string`            | `"position,size"` of the normalization vector index |
 | `blockCacheMaxBytes` | `number`            | block cache memory ceiling, default 128 MB          |
 
-Pass exactly one of `filehandle`, `path` or `reader`. The file reads nothing
-until the first call; every caller that arrives while the header parse is in
-flight shares it, and a failure retries.
+Pass exactly one of `filehandle`, `path` or `reader`. A `HicFile` reads nothing
+until the first call. Every caller that arrives while the header parse is in
+flight shares that parse, and the next call after a failure parses again.
 
-`nvi` is optional and only matters for pre-v9 files, which do not record where
-their normalization vector index lives. Without it the parser finds that
-position by walking the expected-value vectors — a chain of small sequential
-reads, incurred once per file. A v9 file records the position in its header and
+`nvi` is optional and applies to pre-v9 files, which do not record where their
+normalization vector index is. Without it, the parser finds that position by
+walking the expected-value vectors, a chain of small sequential reads that runs
+once per file. A v9 file records the position in its header, so the parser
 skips the walk.
 
-### What a file holds in memory
+### Caches
 
-Three caches, all per `HicFile` instance:
+Each `HicFile` instance has three caches:
 
 | cache        | holds                                           | capacity               |
 | ------------ | ----------------------------------------------- | ---------------------- |
@@ -32,16 +32,16 @@ Three caches, all per `HicFile` instance:
 
 `blockCacheMaxBytes` sets that 128 MB ceiling, and it is the only capacity a
 caller can change, because it is the only one bounding memory rather than a
-working set. The two entry caps come from how many region pairs a fetch runs at
-once — 24 chromosomes is 300 pairs — which the library already derives
-internally and a caller would only have to rederive.
+working set. The library derives the two entry caps from how many region pairs a
+fetch runs at once (24 chromosomes make 300 pairs), so a caller setting them
+would only repeat that calculation.
 [dataflow.md](dataflow.md#why-so-much-of-it-is-yellow) explains what the
 sharing saves.
 
 Lower the ceiling where memory is tighter than bandwidth; raising it has no
 effect once a fetch's working set fits, since the entry cap bounds the cache
-too. A block larger than the whole budget still stays cached — a cache that
-cannot hold what the caller just asked for would answer nobody.
+too. The cache keeps a block larger than the whole budget as its only entry,
+instead of evicting the block as soon as it arrives.
 
 ## `getMetaData(opts?): Promise<HicMetadata>`
 
@@ -62,7 +62,7 @@ Each `Chromosome` has these fields:
 
 ## `getContactRecords(normalization, region1, region2, units, binsize, opts?)`
 
-The main read. `region1` is the x axis and `region2` the y axis; a region is
+`getContactRecords` is the main read. `region1` is the x axis and `region2` the y axis; a region is
 `{ chr, start, end }` with 0-based half-open coordinates. `units` is `'BP'`.
 `normalization` is one of `getNormalizationOptions()`, or `'NONE'`. `opts` is
 `{ onProgress, signal }` — see [Progress](#progress) and
@@ -92,9 +92,9 @@ The call resolves to an object with these fields:
 | `bin2`   | `Int32Array`   | bin index along region2's chromosome          |
 | `counts` | `Float32Array` | contact count, normalized if a vector applied |
 
-The three arrays are parallel and always exactly the same length —
-`bin1.length` is the record count. Bin indices are absolute for their
-chromosome: multiply by `binsize` for a genomic coordinate.
+The `bin1`, `bin2` and `counts` arrays are parallel and always the same length,
+so `bin1.length` is the record count. Bin indices are absolute for their
+chromosome, so multiply one by `binsize` to get a genomic coordinate.
 
 Record **order is unspecified**. The result concatenates whole blocks, and a
 fetch emits the blocks it already had cached before the ones it just read, so
@@ -105,7 +105,7 @@ The result covers every bin **overlapping** the requested region, edge-
 straddling ones included, so a region narrower than one bin still comes back
 with that bin.
 
-`appliedNormalization` names the scheme the file actually applied. A file stores
+`appliedNormalization` names the scheme the reader applied. A file stores
 normalization vectors per (type, chromosome, unit, binsize), so a request for
 `'KR'` at a resolution that has no KR vector comes back as `'NONE'` with raw
 counts rather than failing.
@@ -121,27 +121,29 @@ contacts out.
 
 `transposed` marks that the reader swapped the query, because a `.hic` stores
 only the `bin1 <= bin2` half of the matrix. When it is true, `bin1` runs along
-`region2` and `bin2` along `region1`. It fires when `region1` sits to the right of
-`region2` — a higher chromosome index, or the same chromosome and a later
-start.
+`region2` and `bin2` along `region1`. The reader swaps a query whose `region1`
+is to the right of `region2`, meaning a higher chromosome index, or the same
+chromosome and a later start.
 
 An alias table built from the file's own names resolves chromosome names, so
 `'1'` and `'chr1'` both work whichever the file uses.
 
-Throws an error beginning with `NO_DATA_FOR_RESOLUTION` (exported) if the region
-pair has a matrix but no data at `binsize`. A caller fetching many pairs at once
-will usually want to drop that pair rather than fail the whole fetch, which is
-why the package exports the constant instead of leaving callers to hand-copy the
-string.
+`getContactRecords` throws an error beginning with `NO_DATA_FOR_RESOLUTION`
+(exported) if the region pair has a matrix but no data at `binsize`. A caller
+fetching many pairs at once usually wants to drop that pair rather than fail the
+whole fetch, so the package exports the constant for callers to match against
+instead of copying the string.
 
 A chromosome pair with no matrix at all — plenty of files store no
 inter-chromosomal maps — returns no records instead of throwing.
 
 ## `getNormalizationOptions(opts?): Promise<string[]>`
 
-The normalization types this file carries, always starting with `'NONE'`, e.g.
-`['NONE', 'VC', 'VC_SQRT', 'KR', 'SCALE']`. The list falls out of loading the
-normalization vector index, so the first call may read. `opts` is
+`getNormalizationOptions` resolves to the normalization types the file
+contains, always starting with `'NONE'`, e.g.
+`['NONE', 'VC', 'VC_SQRT', 'KR', 'SCALE']`. The parser builds the list while
+loading the normalization vector index, so the first call may read from the
+file. `opts` is
 `{ onProgress, signal }` — see [Progress](#progress) and
 [Cancellation](#cancellation).
 
@@ -149,8 +151,9 @@ normalization vector index, so the first call may read. `opts` is
 
 `getContactRecords` and `getNormalizationOptions` both take an optional
 trailing `{ onProgress }`, called as `(current, total)` with `current` 0
-before the phase starts and once more as each unit lands. The unit differs by
-phase and a caller does not need to know which — render `current / total`.
+before the phase starts and once more as each unit completes. The unit differs
+by phase, but a caller can render `current / total` without knowing which unit
+it is.
 
 ```ts
 await hic.getContactRecords('KR', region, region, 'BP', 100_000, {
@@ -162,8 +165,8 @@ await hic.getContactRecords('KR', region, region, 'BP', 100_000, {
 
 For `getContactRecords` (and `getBlocks`, which it calls) the unit is the
 **block**. `total` is every block the query covers, and blocks already in the
-cache are counted as done before the first read goes out — so a pan that reuses
-most of its blocks starts most of the way along rather than at zero.
+cache are counted as done before the first read goes out, so a pan that reuses
+most of its blocks starts most of the way along.
 
 For `getNormalizationOptions` the unit is the **expected-value chunk**, and the
 ticks come from the walk that locates the normalization vector index on a
@@ -190,18 +193,19 @@ caller waiting on it has aborted; the others get their result. A caller with no
 signal keeps a shared read alive for everyone. The caches never keep an aborted
 read, so the next call reads again.
 
-A `Reader` that ignores the signal still cancels, only later: a block fetch
-checks it once its reads land, before decompressing.
+With a `Reader` that ignores the signal, an abort still cancels the call, but
+later, because a block fetch checks the signal after its reads return and before
+it decompresses.
 
-Pass the signal per call. The header, normalization-index, matrix and
-normalization-vector reads run under a signal of their own, which overrides one
-set on a `RemoteFile` constructor, so a constructor signal no longer cancels
-them.
+Pass the signal per call. The parser runs the header, normalization-index,
+matrix and normalization-vector reads under a signal it creates for the shared
+read, which overrides one set on a `RemoteFile` constructor, so a constructor
+signal no longer cancels them.
 
 ## Lower-level
 
-These are public because they are useful, not because they are the intended
-entry point: `init`, `getMatrix`, `getBlocks`, `readBlock`,
+`HicFile` also exposes lower-level methods, which are public for callers who
+need them but are not the intended entry point: `init`, `getMatrix`, `getBlocks`, `readBlock`,
 `getNormalizationVector`, `getNormVectorIndex`, `getFileChrName`. Each async
 one takes an optional trailing `{ signal }`; `getBlocks` and
 `getNormVectorIndex` also take `{ onProgress }`.
@@ -218,14 +222,14 @@ norm-vector-index discovery — is `private`, so this list is the whole surface.
 
 ## `readerFromFilehandle(filehandle): Reader`
 
-Adapts a `generic-filehandle2` handle — `read(length, position, opts)`
+`readerFromFilehandle` adapts a `generic-filehandle2` handle — `read(length, position, opts)`
 returning a `Uint8Array` — to the `read(position, length, opts)` returning
 `ArrayBuffer` that this parser uses internally, passing `opts.signal` through.
 The constructor calls it for you; the package exports it so you can wrap or
 instrument reads.
 
 A `Reader` must answer a read past end-of-file **short**, not throw. The header
-walk reads speculatively past the end: the master-index size is an estimate, and
-a zero-length answer to the norm-vector index probe is how the parser recognizes
-a file carrying no normalization data. Every `generic-filehandle2` handle
+walk reads speculatively past the end, because the master-index size is an
+estimate. The parser also recognizes a file with no normalization data by a
+zero-length answer to the norm-vector index probe. Every `generic-filehandle2` handle
 behaves this way, remote 416s included.

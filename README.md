@@ -5,9 +5,10 @@
 
 Read `.hic` contact matrix files, in Node.js or the browser.
 
-A fork of [hic-straw](https://github.com/aidenlab/hic-straw), rewritten in
-TypeScript for a genome browser: many region pairs per fetch, arbitrary
-viewport windows, and contacts handed to a GPU renderer. See
+`@gmod/hic` is a fork of [hic-straw](https://github.com/aidenlab/hic-straw),
+rewritten in TypeScript for a genome browser that fetches many region pairs at
+once, over arbitrary viewport windows, and hands the contacts to a GPU renderer.
+See
 [docs/optimizations.md](docs/optimizations.md) and
 [docs/correctness.md](docs/correctness.md) for what changed.
 
@@ -67,8 +68,8 @@ const hic = new HicFile({
 })
 ```
 
-**Over HTTP, put a byte-range cache underneath. It is worth more than every
-other optimization in this package combined.**
+**Over HTTP, put a byte-range cache underneath. The cache speeds up a remote
+fetch more than every other optimization in this package combined.**
 
 - A contact-matrix query reads many small blocks scattered through the file, and
   a browser runs about six requests per origin at a time, so the number of
@@ -76,8 +77,9 @@ other optimization in this package combined.**
 - [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
   is a drop-in for `RemoteFile` that reads 256 KiB chunks, so neighboring blocks
   share a request.
-- Whole chr1 at 5 kb of a real 69 GB ENCODE file, in headless Chrome: **24.0 s
-  and 225 requests becomes 1.8 s and 45**, with byte-identical output.
+- In headless Chrome, a fetch of the whole of chr1 at 5 kb from a real 69 GB
+  ENCODE file goes from **24.0 s and 225 requests to 1.8 s and 45**, with
+  byte-identical output.
 
 ```js
 import { RemoteFileWithRangeCache } from '@gmod/range-cache-filehandle'
@@ -105,7 +107,7 @@ See [docs/api.md](docs/api.md) for the full API reference.
 - A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose x
   window sits right of its y window gets swapped. `transposed` marks the swap,
   and `bin1` then runs along `region2`.
-- `appliedNormalization` names the normalization the file applied, which may
+- `appliedNormalization` names the normalization the reader applied, which may
   differ from the one you asked for. The file stores vectors per (type,
   chromosome, unit, binsize), so it can offer KR at 5 kb and nothing at 2.5 Mb.
 - `BP` is the only unit this fork supports; it drops the FRAG code paths.
