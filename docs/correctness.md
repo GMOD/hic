@@ -6,9 +6,8 @@ pair per fetch, which holds for juicebox but not for a genome browser's
 arbitrary viewport. Source links below are pinned to
 [hic-straw v2.1.4](https://github.com/igvteam/hic-straw/tree/v2.1.4/src/hicFile.js),
 the current npm release. We measured every consequence against
-`test/data/test.hic` (hg19, v8) with hic-straw installed as a devDependency;
-`pnpm bench:straw` reproduces the measurements, as does calling the same
-methods directly. [optimizations.md](optimizations.md) covers everything else.
+`test/data/test.hic` (hg19, v8); `pnpm bench:straw` reproduces the
+measurements.
 
 ## A region narrower than one bin returns nothing
 
@@ -65,6 +64,5 @@ entirely, the file ends where `skipExpectedValues`'s first read would start.
 That read comes back short, and the unguarded `getInt()` throws a bare
 `RangeError` before the walk reaches the check two calls later.
 
-This package's `skipExpectedValues` (in `src/hicFile.ts`) checks the length of
-its first read before parsing it, in addition to the check on the second
-read.
+This package's `skipExpectedValues` (in `src/hicFile.ts`) also checks the
+length of its first read.

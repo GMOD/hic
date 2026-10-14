@@ -70,11 +70,9 @@ the same bytes:
 | range-coalesced |  **1.8 s** |            45 |
 
 Every CPU cost on this fetch is under 100 ms, so the request count sets the
-wall-clock time, and the range-coalesced fetch runs 13x faster. This package
-takes a filehandle rather than adding a cache of its own, so a remote consumer
-needs
+wall-clock time. This package has no cache of its own; a remote consumer passes
 [`@gmod/range-cache-filehandle`](https://github.com/GMOD/range-cache-filehandle)
-to merge the reads (the README shows the setup).
+as the filehandle.
 
 ### Contacts are struct-of-arrays
 
