@@ -197,10 +197,10 @@ With a `Reader` that ignores the signal, an abort still cancels the call, but
 later, because a block fetch checks the signal after its reads return and before
 it decompresses.
 
-Pass the signal per call. The parser runs the header, normalization-index,
-matrix and normalization-vector reads under a signal it creates for the shared
-read, which overrides one set on a `RemoteFile` constructor, so a constructor
-signal no longer cancels them.
+Pass the signal per call. The header, normalization-index, matrix and
+normalization-vector reads run under the shared read's own signal, which
+`SharedReadCache` creates and which overrides one set on a `RemoteFile`
+constructor, so a constructor signal no longer cancels them.
 
 ## Lower-level
 
