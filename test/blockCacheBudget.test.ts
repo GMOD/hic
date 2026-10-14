@@ -24,8 +24,8 @@ function countingReader(inner: Reader) {
 
 const RES = 100_000
 // Six blocks, ~720 KB of contacts, so a small budget has something to evict —
-// chr1's first 20 Mb at this resolution is a single block, which the LRU keeps
-// whatever the budget says (see lru.ts).
+// chr1's first 20 Mb at this resolution is a single block, which the cache keeps
+// whatever the budget says.
 const region: HicRegion = { chr: '1', start: 0, end: 200_000_000 }
 
 /** Reads issued by a second, identical fetch — the one a pan repeats. */
@@ -63,16 +63,25 @@ test('a lone block outlives a budget smaller than itself', async () => {
   expect(reads).toBe(0)
 })
 
-/**
- * Contacts as a sorted set. Order is not part of the result: `getBlocks` hands
- * back the blocks it had cached before the ones it just read, so the same fetch
- * under a different cache state emits the same records in a different order.
- */
+/** Contacts as a sorted set, since order is not part of the result. */
 function contactSet({ records }: { records: ContactRecords }) {
   return [...records.bin1]
     .map((b1, i) => `${b1}:${records.bin2[i]}:${records.counts[i]}`)
     .sort()
 }
+
+test('concurrent fetches of one pair read each block once', async () => {
+  const file = countingReader(openTestHic())
+  const hic = new HicFile({ reader: file })
+  await hic.getMetaData()
+  await hic.getMatrix(1, 1)
+  file.state.reads = 0
+  const [a] = await Promise.all([
+    hic.getBlocks(region, region, RES),
+    hic.getBlocks(region, region, RES),
+  ])
+  expect(file.state.reads).toBe(a.filter(Boolean).length)
+})
 
 test('the budget changes reads, not records', async () => {
   const tight = await repeatFetchReads(1024)

@@ -5,7 +5,6 @@ import { LocalFile } from 'generic-filehandle2'
 import { binWindow } from './binWindow.ts'
 import BinaryParser from './binary.ts'
 import BufferedFile from './bufferedFile.ts'
-import LRU from './lru.ts'
 import Matrix from './matrix.ts'
 import NormalizationVector from './normalizationVector.ts'
 import { readerFromFilehandle } from './reader.ts'
@@ -66,8 +65,7 @@ export interface HicConfig {
   /**
    * Ceiling on the decompressed contacts the block cache holds, in bytes.
    * Defaults to 128 MB. Lower it where the budget is tight and re-reading is
-   * cheaper than the memory; raising it buys nothing once a fetch's working set
-   * fits, since the entry cap bounds the cache too.
+   * cheaper than the memory.
    */
   blockCacheMaxBytes?: number
 }
@@ -75,7 +73,7 @@ export interface HicConfig {
 // Cached blocks are the decompressed records and nothing else. hic-straw also
 // hung the MatrixZoomData and the block-index entry off each Block; neither was
 // ever read back, and the zoom data pinned a whole `blockIndex` record per
-// cached block for the lifetime of the LRU.
+// cached block for the lifetime of the cache.
 interface Block {
   blockNumber: number
   records: ContactRecords
@@ -122,15 +120,13 @@ function truncateRecords(records: ContactRecords, n: number): ContactRecords {
 // The cliffs are exactly these three capacities. Note the first column: 41% of a
 // cold whole-genome fetch's reads were re-reads of normalization vectors the
 // same fetch had already fetched.
-const BLOCK_CACHE_MAX_ENTRIES = 1024
-// The bound the entry cap was standing in for. Blocks became struct-of-arrays
-// (see contactRecords.ts), so a cached contact is 12 bytes of untraced
-// ArrayBuffer rather than ~55 on the GC-traced heap — but a block still holds
-// every contact in its bin square, which is the one thing here that can hold
-// real memory, and block sizes vary by more than an order of magnitude with
-// binsize. Measured on the file above: 0.05 MB at 2.5 Mb, 0.23 MB at 100 kb. So
-// the entry cap now tracks the working set and this tracks the memory, instead
-// of one number answering both badly. See LRU's WeightOpts.
+//
+// Blocks became struct-of-arrays (see contactRecords.ts), so a cached contact is
+// 12 bytes of untraced ArrayBuffer rather than ~55 on the GC-traced heap — but a
+// block still holds every contact in its bin square, which is the one thing here
+// that can hold real memory, and block sizes vary by more than an order of
+// magnitude with binsize. Measured on the file above: 0.05 MB at 2.5 Mb, 0.23 MB
+// at 100 kb. So the block cache's only bound is its byte budget.
 //
 // This is the one capacity here a caller can override (`blockCacheMaxBytes`),
 // because it is the only one that bounds MEMORY. The two entry caps below are
@@ -152,7 +148,10 @@ const NORM_VECTOR_CACHE_SIZE = 64
 // so no separate resolution generation is needed to keep entries apart —
 // hic-straw's extra `resolution` field only made the cache single-resolution
 // (every zoom step threw the previous level away).
-function blockCacheWeight(block: Block) {
+function blockCacheWeight(block: Block | undefined) {
+  if (!block) {
+    return 0
+  }
   const { bin1, bin2, counts } = block.records
   return bin1.byteLength + bin2.byteLength + counts.byteLength
 }
@@ -190,7 +189,7 @@ export class HicFile {
   })
   // Assigned in the constructor rather than here, since its byte budget is
   // configurable and a field initializer cannot see `config`.
-  private blockCache: LRU<string, Block>
+  private blockCache: SharedReadCache<string, Block | undefined>
   private normVectorIndexPosition = -1
   private normVectorIndexSize = -1
 
@@ -212,9 +211,9 @@ export class HicFile {
   constructor(config: HicConfig) {
     const { filehandle, path, reader, nvi, blockCacheMaxBytes } = config
     this.nvi = nvi
-    this.blockCache = new LRU<string, Block>(BLOCK_CACHE_MAX_ENTRIES, {
-      maxBytes: blockCacheMaxBytes ?? BLOCK_CACHE_MAX_BYTES,
-      weigh: blockCacheWeight,
+    this.blockCache = new SharedReadCache({
+      maxSize: blockCacheMaxBytes ?? BLOCK_CACHE_MAX_BYTES,
+      sizeOf: blockCacheWeight,
     })
     if (reader) {
       this.file = reader
@@ -610,45 +609,42 @@ export class HicFile {
         }
 
         const blockNumbers = zd.getBlockNumbers(region1, region2, this.version)
-        const blockNumbersToQuery: number[] = []
-        for (const num of blockNumbers) {
-          const cached = this.blockCache.get(blockKey(num, zd))
-          if (cached) {
-            blocks.push(cached)
-          } else {
-            blockNumbersToQuery.push(num)
-          }
-        }
+        const keys = blockNumbers.map(num => blockKey(num, zd))
+        const cached = keys.map(key => this.blockCache.has(key))
 
         // Cached blocks are already done, not absent: a pan that reuses most
         // of its blocks reads most of the way along rather than restarting at
         // zero, which is what the bar should say — the work left is the reads.
+        // A block another fetch has in flight counts as cached too.
         //
         // A query covering no blocks at all reports nothing rather than `0, 0`:
         // there is no fraction in it, and a caller dividing would get NaN.
         const { onProgress } = opts ?? {}
-        let done = blocks.length
-        if (blockNumbers.length > 0) {
-          onProgress?.(done, blockNumbers.length)
+        const total = blockNumbers.length
+        let done = cached.filter(Boolean).length
+        if (total > 0) {
+          onProgress?.(done, total)
         }
-        // Still one `Promise.all`, so every block is still issued in one wave:
-        // what a remote file pays is round-trip DEPTH, and counting the
-        // completions must not turn one wave into a queue. `readChainDepth`
-        // pins that.
-        const newBlocks = await Promise.all(
-          blockNumbersToQuery.map(async blockNumber => {
-            const block = await this.readBlock(blockNumber, zd, signalOpts)
-            done++
-            onProgress?.(done, blockNumbers.length)
+        // One `Promise.all`, so every block is issued in one wave: what a
+        // remote file pays is round-trip DEPTH, and counting the completions
+        // must not turn one wave into a queue. `readChainDepth` pins that.
+        //
+        // A block number missing from the index has no data, so it skips the
+        // cache, which would otherwise keep a weightless entry for it forever.
+        blocks = await Promise.all(
+          blockNumbers.map(async (num, i) => {
+            const block = zd.blockIndex[num]
+              ? await this.blockCache.get(keys[i]!, opts?.signal, signal =>
+                  this.readBlock(num, zd, { signal }),
+                )
+              : undefined
+            if (!cached[i]) {
+              done++
+              onProgress?.(done, total)
+            }
             return block
           }),
         )
-        for (const block of newBlocks) {
-          if (block) {
-            this.blockCache.set(blockKey(block.blockNumber, zd), block)
-          }
-        }
-        blocks = blocks.concat(newBlocks)
       }
     }
     return blocks

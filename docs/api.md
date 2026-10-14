@@ -24,11 +24,11 @@ parser skips the walk.
 
 Each `HicFile` instance has three caches:
 
-| cache        | holds                                           | capacity               |
-| ------------ | ----------------------------------------------- | ---------------------- |
-| block cache  | decompressed contacts, the only large entries   | 1024 entries or 128 MB |
-| matrix cache | one block index per chromosome pair             | 512 entries            |
-| norm vector  | one vector slice per (type, chr, unit, binsize) | 64 entries             |
+| cache        | holds                                           | capacity    |
+| ------------ | ----------------------------------------------- | ----------- |
+| block cache  | decompressed contacts, the only large entries   | 128 MB      |
+| matrix cache | one block index per chromosome pair             | 512 entries |
+| norm vector  | one vector slice per (type, chr, unit, binsize) | 64 entries  |
 
 `blockCacheMaxBytes` sets that 128 MB ceiling, and it is the only capacity a
 caller can change, because it is the only one bounding memory rather than a
@@ -38,10 +38,9 @@ would only repeat that calculation.
 [dataflow.md](dataflow.md#why-so-much-of-it-is-yellow) explains what the
 sharing saves.
 
-Lower the ceiling where memory is tighter than bandwidth; raising it has no
-effect once a fetch's working set fits, since the entry cap bounds the cache
-too. The cache keeps a block larger than the whole budget as its only entry,
-instead of evicting the block as soon as it arrives.
+Lower the ceiling where memory is tighter than bandwidth. The cache keeps a
+block larger than the whole budget as its only entry, instead of evicting the
+block as soon as it arrives.
 
 ## `getMetaData(opts?): Promise<HicMetadata>`
 
