@@ -1,3 +1,23 @@
+## [2.0.0](https://github.com/GMOD/hic/compare/v1.3.2...v2.0.0) (2026-10-15)
+
+### Features
+
+- **BREAKING** Drop the units parameter and chromosome-name aliasing ([ca14ac8](https://github.com/GMOD/hic/commit/ca14ac8d300e60a67f49767ad01afd64ddaaec09))
+
+### Other Changes
+
+- Rewrite AI-writing tropes in README and docs ([2d921ca](https://github.com/GMOD/hic/commit/2d921ca8850c0f942de36699e47498b01bf57d54))
+- Restore claims changed by the tropes rewrite ([087b1ec](https://github.com/GMOD/hic/commit/087b1ecf95f3c17ed09aecc772535cbfd17b12da))
+- Fold short verdict sentences into their neighbours ([03b32c9](https://github.com/GMOD/hic/commit/03b32c93fb60fca1f2306db2cf49c5430c002027))
+- Fix doc errors found in the tropes audit ([cf46b18](https://github.com/GMOD/hic/commit/cf46b188ba1b936ccab8135c3d10bab9d22bcda9))
+- Restore wording the tropes rewrite changed without a trope ([cfaac1c](https://github.com/GMOD/hic/commit/cfaac1cb848c5ac70dd68f51ae3b24fe7d8dcd60))
+- Trim README and docs wordiness ([30c1c4f](https://github.com/GMOD/hic/commit/30c1c4fc7a90faf6ebc8ee5890933a449213f5f0))
+- Fetch an inter-chromosomal pair's two vectors concurrently ([722e2e1](https://github.com/GMOD/hic/commit/722e2e178857794e41bb4a686a445e79a8d82890))
+- Stop writing nvi into the caller's config, and loop the index refill ([067a901](https://github.com/GMOD/hic/commit/067a901a34e5f6eadd39e52b7614a897725628ad))
+- Drop BufferedFile's unreachable branches ([7ffadf6](https://github.com/GMOD/hic/commit/7ffadf62d48f65251478fc04a653ec21ffe518e4))
+- Reword two new comments flagged by the tropes scan ([d1c6c00](https://github.com/GMOD/hic/commit/d1c6c00ca77cb62a033c6a9a3f6ad7a96455caa9))
+- Share in-flight block reads through SharedReadCache ([b6fe438](https://github.com/GMOD/hic/commit/b6fe438500dedf7c59e0553e9af110587414c6ef))
+
 ## [1.3.2](https://github.com/GMOD/hic/compare/v1.3.1...v1.3.2) (2026-10-11)
 
 ### Documentation
