@@ -3,3 +3,5 @@ pnpm-lock.yaml
 # it here would fight the generator on every release
 CHANGELOG.md
 .claude/
+# written by scripts/oe-oracle.py from straw
+test/data/test.oe.json
