@@ -1026,6 +1026,20 @@ export class HicFile {
     return { kind: 'intra', firstDistance: first, values }
   }
 
+  /**
+   * The library's total contact count, the `ALL` whole-genome map's
+   * `sumCounts`: what scales two libraries of different depth against each
+   * other. Undefined for a file with no `ALL` map.
+   */
+  async getTotalContacts(opts?: BaseOpts) {
+    await this.init(opts)
+    const all = this.chromosomes.find(chr => chr.name.toUpperCase() === 'ALL')
+    const zd = all
+      ? (await this.getMatrix(all.index, all.index, opts))?.getZoomLevels()[0]
+      : undefined
+    return zd?.sumCounts
+  }
+
   private async getExpectedSection(
     section: 'raw' | 'normalized',
     opts: ProgressOpts,

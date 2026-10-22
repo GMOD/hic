@@ -13,6 +13,11 @@ export default class Matrix {
     this.bpZoomData = zoomDataList.filter(zd => zd.zoom.unit === 'BP')
   }
 
+  /** The BP zoom levels this matrix holds, finest last as the file lists them. */
+  getZoomLevels(): readonly MatrixZoomData[] {
+    return this.bpZoomData
+  }
+
   // Fetch zoom data by bin size. If no matching level exists return undefined.
   getZoomData(binSize: number) {
     return this.bpZoomData.find(zd => binSize === zd.zoom.binSize)

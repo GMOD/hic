@@ -165,6 +165,13 @@ The first call walks the file's expected-value sections, which carry no index,
 so it costs two reads per expected-value chunk; later calls read only the
 distances they need. `onProgress` counts the chunks.
 
+## `getTotalContacts(opts?): Promise<number | undefined>`
+
+`getTotalContacts` resolves to the library's total contact count, read from
+the whole-genome `ALL` map's `sumCounts`. Two libraries sequenced to different
+depths compare once each count is scaled by its own total. The call resolves to
+`undefined` for a file with no `ALL` map.
+
 ## `getNormalizationOptions(opts?): Promise<string[]>`
 
 `getNormalizationOptions` resolves to the normalization types the file

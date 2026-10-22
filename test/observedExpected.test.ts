@@ -98,3 +98,9 @@ test('a distance past the vector holds its last value, as straw clamps', async (
     expect(far.values.at(-1)).toBe(last)
   }
 })
+
+// test.hic's ALL map: one zoom level, its sumCounts the whole library
+test('the total contact count is the ALL map sum', async () => {
+  const hic = new HicFile({ reader: openTestHic() })
+  expect(await hic.getTotalContacts()).toBe(3217740)
+})
