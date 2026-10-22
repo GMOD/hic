@@ -1,3 +1,9 @@
+## [2.2.0](https://github.com/GMOD/hic/compare/v2.1.0...v2.2.0) (2026-10-22)
+
+### Features
+
+- GetTotalContacts, a library's depth from its ALL map ([0e93c5d](https://github.com/GMOD/hic/commit/0e93c5d32ea6d11e500a6023316946174a21c448))
+
 ## [2.1.0](https://github.com/GMOD/hic/compare/v2.0.0...v2.1.0) (2026-10-22)
 
 ### Chores
