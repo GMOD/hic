@@ -68,6 +68,18 @@ export interface BlockIndexEntry {
   size: number
 }
 
+/**
+ * The expected contact count for one region pair, the denominator of
+ * observed/expected. Within a chromosome it depends only on the distance in
+ * bins, so it is the expected-value vector's entries over the distances the
+ * pair spans: `values[|bin2 - bin1| - firstDistance]`, already divided by the
+ * chromosome's scale factor and holding the vector's last value past its end.
+ * Between chromosomes it is one number, the map's average contact.
+ */
+export type ExpectedValues =
+  | { kind: 'intra'; firstDistance: number; values: Float64Array }
+  | { kind: 'inter'; average: number }
+
 export interface HicMetadata {
   version: number
   genome: string

@@ -6,6 +6,7 @@ export type { ContactRecords } from './contactRecords.ts'
 export type {
   BaseOpts,
   Chromosome,
+  ExpectedValues,
   HicMetadata,
   HicRegion,
   ProgressCallback,

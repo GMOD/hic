@@ -15,6 +15,7 @@ import type {
   BaseOpts,
   BlockIndexEntry,
   Chromosome,
+  ExpectedValues,
   HicMetadata,
   HicRegion,
   ProgressOpts,
@@ -47,6 +48,36 @@ interface NormVectorIndex {
 
 interface SignalOpts extends ProgressOpts {
   signal: AbortSignal
+}
+
+/** One expected-value vector: its values on disk and its chromosome scale factors. */
+interface ExpectedChunk {
+  vector: NormalizationVector
+  nValues: number
+  chrScaleFactors: Map<number, number>
+}
+
+/** A walked expected-value section, and where the next section starts. */
+interface ExpectedSection {
+  chunks: Map<string, ExpectedChunk>
+  end: number
+}
+
+function getExpectedKey(type: string, unit: string, binSize: number) {
+  return `${type}_${unit}_${binSize}`
+}
+
+// The range of `|bin2 - bin1|` over two half-open bin windows.
+function distanceRange(
+  [x1, x2]: readonly [number, number],
+  [y1, y2]: readonly [number, number],
+) {
+  const overlap = x1 < y2 && y1 < x2
+  const nearest = overlap
+    ? 0
+    : Math.min(Math.abs(y1 - (x2 - 1)), Math.abs(x1 - (y2 - 1)))
+  const farthest = Math.max(Math.abs(y2 - 1 - x1), Math.abs(x2 - 1 - y1))
+  return [nearest, farthest] as const
 }
 
 export interface HicConfig {
@@ -180,6 +211,9 @@ export class HicFile {
     string,
     NormVectorIndex | undefined
   >()
+  // 'raw' and 'normalized', each walked once: the sections carry no index, so
+  // a chunk's position is known only by walking every chunk before it.
+  private expectedSectionCache = new SharedReadCache<string, ExpectedSection>()
   private normVectorCache = new SharedReadCache<
     string,
     NormalizationVector | undefined
@@ -196,6 +230,8 @@ export class HicFile {
   private version = 0
   private genomeId = ''
   private footerPosition = 0
+  // Where the raw (NONE) expected values begin, right after the master index.
+  private expectedValuesPosition = 0
   // Where the file's normalization data begins, and so also where a file
   // carrying none of it ends. Public so a test can cut a real file there to
   // make that second shape.
@@ -253,8 +289,11 @@ export class HicFile {
     }
     const footerPosition = binaryParser.getLong()
 
-    const { masterIndex, normExpectedValueVectorsPosition } =
-      await this.readFooter(version, footerPosition, signal)
+    const {
+      masterIndex,
+      expectedValuesPosition,
+      normExpectedValueVectorsPosition,
+    } = await this.readFooter(version, footerPosition, signal)
 
     const bodyPosition = Object.values(masterIndex).reduce(
       (min, entry) => Math.min(min, entry.start),
@@ -303,6 +342,7 @@ export class HicFile {
     throwIfAborted(signal)
     this.version = version
     this.footerPosition = footerPosition
+    this.expectedValuesPosition = expectedValuesPosition
     this.masterIndex = masterIndex
     this.normExpectedValueVectorsPosition = normExpectedValueVectorsPosition
     this.genomeId = genomeId
@@ -350,10 +390,15 @@ export class HicFile {
       masterIndex[key] = { start: pos, size }
     }
 
+    const expectedValuesPosition = footerPosition + skip + binaryParser.position
     // Normalized expected values start after the expected values
     const normExpectedValueVectorsPosition =
       version > 5 ? footerPosition + (version < 9 ? 4 : 8) + nBytes : undefined
-    return { masterIndex, normExpectedValueVectorsPosition }
+    return {
+      masterIndex,
+      expectedValuesPosition,
+      normExpectedValueVectorsPosition,
+    }
   }
 
   async getMatrix(chrIdx1: number, chrIdx2: number, opts?: BaseOpts) {
@@ -871,10 +916,7 @@ export class HicFile {
     const { signal } = opts
     let index: NormVectorIndex | undefined
     if (this.normExpectedValueVectorsPosition !== undefined) {
-      const nviStart = await this.skipExpectedValues(
-        this.normExpectedValueVectorsPosition,
-        opts,
-      )
+      const nviStart = (await this.getExpectedSection('normalized', opts)).end
       const data = await this.file.read(nviStart, INT, { signal })
       // Possible if there are no norm vectors. A legal v8 file, though uncommon.
       if (data.byteLength !== 0) {
@@ -903,69 +945,181 @@ export class HicFile {
     return index
   }
 
-  // Used when the position of the norm vector index is unknown: skip the
-  // normalized expected values to find the index.
-  private async skipExpectedValues(start: number, opts: SignalOpts) {
+  /**
+   * The expected count for a region pair at `binsize`, the denominator of
+   * observed/expected, as straw computes it. `normalization` must be the one
+   * the pair's records carry (`getContactRecords`' `appliedNormalization`),
+   * since each normalization has its own vector. Undefined where the file has
+   * no expected value for it: no vector at this binsize, or a version 5 file
+   * asked for a normalized one.
+   *
+   * Within a chromosome the vector is read for only the distances the pair
+   * spans. Between chromosomes straw divides by the map's average contact, the
+   * raw `sumCounts` over its bins, whatever the normalization.
+   */
+  async getExpectedValues(
+    normalization: string,
+    region1: HicRegion,
+    region2: HicRegion,
+    binsize: number,
+    opts?: ProgressOpts,
+  ): Promise<ExpectedValues | undefined> {
+    await this.init(opts)
+    const idx1 = this.chromosomeIndexMap.get(region1.chr)
+    const idx2 = this.chromosomeIndexMap.get(region2.chr)
+    if (idx1 === undefined || idx2 === undefined) {
+      return undefined
+    }
+    if (idx1 !== idx2) {
+      const matrix = await this.getMatrix(idx1, idx2, opts)
+      const zd = matrix?.getZoomData(binsize)
+      if (!zd) {
+        return undefined
+      }
+      // straw's bin counts leave out a chromosome's partial last bin
+      const nBins1 = Math.max(
+        1,
+        Math.floor(this.chromosomes[idx1]!.size / binsize),
+      )
+      const nBins2 = Math.max(
+        1,
+        Math.floor(this.chromosomes[idx2]!.size / binsize),
+      )
+      return { kind: 'inter', average: zd.sumCounts / nBins1 / nBins2 }
+    }
+    const normalized = !!normalization && normalization !== 'NONE'
+    if (normalized && this.normExpectedValueVectorsPosition === undefined) {
+      return undefined
+    }
+    const section = await this.getExpectedSection(
+      normalized ? 'normalized' : 'raw',
+      opts ?? {},
+    )
+    const chunk = section.chunks.get(
+      getExpectedKey(normalized ? normalization : 'NONE', 'BP', binsize),
+    )
+    if (!chunk || chunk.nValues === 0) {
+      return undefined
+    }
+    const [first, last] = distanceRange(
+      binWindow(region1, binsize),
+      binWindow(region2, binsize),
+    )
+    const signalOpts = { signal: opts?.signal }
+    const stored = await chunk.vector.getValues(first, last + 1, signalOpts)
+    const tail =
+      stored.length < last + 1 - first
+        ? (
+            await chunk.vector.getValues(
+              chunk.nValues - 1,
+              chunk.nValues,
+              signalOpts,
+            )
+          )[0]!
+        : 0
+    // straw divides by 1 where the section names no factor for the chromosome
+    const factor = chunk.chrScaleFactors.get(idx1) ?? 1
+    const values = new Float64Array(last + 1 - first)
+    for (let i = 0; i < values.length; i++) {
+      values[i] = (i < stored.length ? stored[i]! : tail) / factor
+    }
+    return { kind: 'intra', firstDistance: first, values }
+  }
+
+  private async getExpectedSection(
+    section: 'raw' | 'normalized',
+    opts: ProgressOpts,
+  ) {
+    return this.expectedSectionCache.get(section, opts.signal, signal =>
+      this.walkExpectedSection(
+        section === 'raw'
+          ? this.expectedValuesPosition
+          : this.normExpectedValueVectorsPosition!,
+        section === 'normalized',
+        { signal, onProgress: opts.onProgress },
+      ),
+    )
+  }
+
+  // Walk one expected-value section, recording where each chunk's values sit
+  // and its chromosome scale factors. The normalized section's end is also
+  // where a pre-v9 file's normalization vector index begins.
+  //
+  // A chunk's two reads land a whole expected-value vector apart — one per bin
+  // of the genome's longest chromosome, so megabytes at a fine binsize — which
+  // is further than the buffer reaches. On a remote file that is two round
+  // trips per chunk that nothing can merge, and it is why this walk, not the
+  // index it leads to, is the slow part of opening a pre-v9 file. It is also
+  // why the chunk is the unit worth counting: known before the first read, each
+  // costing about the same. Chunks are walked in order, since each one's size
+  // is known only once the one before it has been parsed.
+  private async walkExpectedSection(
+    start: number,
+    normalized: boolean,
+    opts: SignalOpts,
+  ): Promise<ExpectedSection> {
     const { signal, onProgress } = opts
     const version = this.version
+    const valueSize = version < 9 ? DOUBLE : FLOAT
     const file = new BufferedFile({ file: this.file, size: 256000 })
+    const chunks = new Map<string, ExpectedChunk>()
     const data = await file.read(start, INT, { signal })
-    // A file with no normalization at all ends where this section would start,
-    // so the count this is about to read is past EOF. That is the same "no norm
-    // vectors" case `readNormExpectedValuesAndNormVectorIndex` guards its own
-    // read for, and it has to be caught HERE too, because this runs first:
-    // a v9 file that records no norm-vector-index position takes the v8
-    // discovery path, and that path starts by skipping a section that isn't
-    // there. Answering `start` leaves the caller's guard to do the rest.
+    // A file with no normalization at all ends where the normalized section
+    // would start, so the count this is about to read is past EOF. A v9 file
+    // that records no norm-vector-index position takes the v8 discovery path,
+    // which starts by walking a section that isn't there, so the empty answer
+    // has to come from here.
     if (data.byteLength < INT) {
-      return start
+      return { chunks, end: start }
     }
-    const binaryParser = new BinaryParser(new DataView(data))
-    const nEntries = binaryParser.getInt() // Total # of expected value chunks
-
-    // Skip one chunk, answering where the next one starts.
-    //
-    // Its two reads land a whole expected-value vector apart — one per bin of
-    // the genome, so tens of MB at a fine binsize — which is further than the
-    // buffer reaches. On a remote file that is two round trips per chunk that
-    // nothing can merge, and it is why this walk, not the index it is looking
-    // for, is the slow part of opening a pre-v9 file. It is also why the chunk
-    // is the unit worth counting: `nEntries` of them, known before the first
-    // read, each costing about the same.
-    const skipChunk = async (chunkStart: number) => {
-      let chunkSize = 0
-
-      let buf = await file.read(chunkStart, 500, { signal })
-      let parser = new BinaryParser(new DataView(buf))
-      parser.getString() // type
-      parser.getString() // unit
-      parser.getInt() // binSize
-      const nValues = version < 9 ? parser.getInt() : parser.getLong()
-      chunkSize += parser.position + nValues * (version < 9 ? DOUBLE : FLOAT)
-
-      buf = await file.read(chunkStart + chunkSize, INT, { signal })
-      parser = new BinaryParser(new DataView(buf))
-      const nChrScaleFactors = parser.getInt()
-      chunkSize +=
-        INT + nChrScaleFactors * (INT + (version < 9 ? DOUBLE : FLOAT))
-
-      return chunkStart + chunkSize
-    }
-
-    // A loop rather than the tail recursion this was, because the position is
-    // the only thing carried between chunks and a counter now rides along with
-    // it. Chunks must be walked in order — each one's size is only known once
-    // the one before it has been parsed — so the awaits are sequential by
-    // nature, not by oversight.
+    const nEntries = new BinaryParser(new DataView(data)).getInt()
     if (nEntries > 0) {
       onProgress?.(0, nEntries)
     }
     let position = start + INT
     for (let done = 0; done < nEntries; done++) {
-      position = await skipChunk(position)
+      let parser = new BinaryParser(
+        new DataView(await file.read(position, 500, { signal })),
+      )
+      const type = normalized ? parser.getString() : 'NONE'
+      const unit = parser.getString()
+      const binSize = parser.getInt()
+      const nValues = version < 9 ? parser.getInt() : parser.getLong()
+      const valuesPosition = position + parser.position
+      const factorsPosition = valuesPosition + nValues * valueSize
+
+      parser = new BinaryParser(
+        new DataView(await file.read(factorsPosition, INT, { signal })),
+      )
+      const nFactors = parser.getInt()
+      const factorBytes = nFactors * (INT + valueSize)
+      parser = new BinaryParser(
+        new DataView(
+          await file.read(factorsPosition + INT, factorBytes, { signal }),
+        ),
+      )
+      const chrScaleFactors = new Map<number, number>()
+      for (let i = 0; i < nFactors; i++) {
+        const chrIdx = parser.getInt()
+        chrScaleFactors.set(
+          chrIdx,
+          version < 9 ? parser.getDouble() : parser.getFloat(),
+        )
+      }
+      chunks.set(getExpectedKey(type, unit, binSize), {
+        vector: new NormalizationVector(
+          this.file,
+          valuesPosition,
+          nValues,
+          valueSize,
+        ),
+        nValues,
+        chrScaleFactors,
+      })
+      position = factorsPosition + INT + factorBytes
       onProgress?.(done + 1, nEntries)
     }
-    return position
+    return { chunks, end: position }
   }
 
   private parseNormVectorEntry(

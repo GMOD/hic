@@ -134,6 +134,37 @@ leaving callers to hand-copy the string.
 A chromosome pair with no matrix at all — plenty of files store no
 inter-chromosomal maps — returns no records instead of throwing.
 
+## `getExpectedValues(normalization, region1, region2, binsize, opts?)`
+
+`getExpectedValues` resolves to the expected contact count for a region pair,
+the denominator of observed/expected, computed as straw computes it. Pass the
+`appliedNormalization` the pair's `getContactRecords` call reported, since a
+file stores one expected-value vector per normalization and binsize. `opts` is
+`{ onProgress, signal }`.
+
+The answer is an `ExpectedValues`, one of two shapes:
+
+| `kind`    | fields                                          | expected count of `(bin1, bin2)`                |
+| --------- | ----------------------------------------------- | ----------------------------------------------- |
+| `'intra'` | `firstDistance: number`, `values: Float64Array` | `values[Math.abs(bin2 - bin1) - firstDistance]` |
+| `'inter'` | `average: number`                               | `average`                                       |
+
+- **Within a chromosome** the expected count depends on the distance between
+  the two bins. `values` covers every distance the pair's bins span, already
+  divided by the chromosome's scale factor, and holds the vector's last value
+  past its end.
+- **Between chromosomes** it is the map's average contact: its raw
+  `sumCounts` over `floor(size / binsize)` bins on each side, whatever the
+  normalization.
+
+The call resolves to `undefined` where the file has no expected value: no
+vector for that normalization at that binsize, a chromosome missing from the
+file, or a version 5 file asked for a normalized one.
+
+The first call walks the file's expected-value sections, which carry no index,
+so it costs two reads per expected-value chunk; later calls read only the
+distances they need. `onProgress` counts the chunks.
+
 ## `getNormalizationOptions(opts?): Promise<string[]>`
 
 `getNormalizationOptions` resolves to the normalization types the file
@@ -215,7 +246,8 @@ norm-vector-index discovery — is `private`, so this list is the whole surface.
 ## Exported types
 
 `HicConfig`, `HicMetadata`, `HicRegion`, `Chromosome`, `Zoom`,
-`ContactRecords`, `Reader`, `BaseOpts`, `ProgressCallback`, `ProgressOpts`.
+`ContactRecords`, `ExpectedValues`, `Reader`, `BaseOpts`, `ProgressCallback`,
+`ProgressOpts`.
 
 ## `readerFromFilehandle(filehandle): Reader`
 

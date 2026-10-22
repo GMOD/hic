@@ -82,6 +82,7 @@ describe('block selection covers the same window', () => {
       chr,
       chr,
       { index: 0, unit: 'BP', binSize },
+      0,
       BLOCK_BIN_COUNT,
       100,
       {},

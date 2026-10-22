@@ -7,6 +7,8 @@ export default class MatrixZoomData {
   chr1: Chromosome
   chr2: Chromosome
   zoom: Zoom
+  /** the raw contacts summed over the whole map at this binsize */
+  sumCounts: number
   blockBinCount: number
   blockColumnCount: number
   blockIndex: Record<number, BlockIndexEntry>
@@ -15,6 +17,7 @@ export default class MatrixZoomData {
     chr1: Chromosome,
     chr2: Chromosome,
     zoom: Zoom,
+    sumCounts: number,
     blockBinCount: number,
     blockColumnCount: number,
     blockIndex: Record<number, BlockIndexEntry>,
@@ -22,6 +25,7 @@ export default class MatrixZoomData {
     this.chr1 = chr1
     this.chr2 = chr2
     this.zoom = zoom
+    this.sumCounts = sumCounts
     this.blockBinCount = blockBinCount
     this.blockColumnCount = blockColumnCount
     this.blockIndex = blockIndex
@@ -104,7 +108,7 @@ export default class MatrixZoomData {
   ) {
     const unit = dis.getString()
     const zoomIndex = dis.getInt()
-    dis.getFloat() // sumCounts
+    const sumCounts = dis.getFloat()
     dis.getFloat() // occupiedCellCount
     dis.getFloat() // stdDev
     dis.getFloat() // percent95
@@ -125,6 +129,7 @@ export default class MatrixZoomData {
       chr1,
       chr2,
       { index: zoomIndex, unit, binSize },
+      sumCounts,
       blockBinCount,
       blockColumnCount,
       blockIndex,
