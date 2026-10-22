@@ -1,3 +1,13 @@
+## [2.1.0](https://github.com/GMOD/hic/compare/v2.0.0...v2.1.0) (2026-10-22)
+
+### Chores
+
+- Prettier leaves the generated O/E oracle fixture alone ([6993dc1](https://github.com/GMOD/hic/commit/6993dc1bdc1436e509d2106500dda9907aba3eed))
+
+### Features
+
+- GetExpectedValues, the denominator of observed/expected ([60d91ab](https://github.com/GMOD/hic/commit/60d91ab7681048f18b556c759fec4c1cc9bcbe59))
+
 ## [2.0.0](https://github.com/GMOD/hic/compare/v1.3.2...v2.0.0) (2026-10-15)
 
 ### Features
