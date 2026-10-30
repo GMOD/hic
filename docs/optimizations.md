@@ -93,8 +93,8 @@ the garbage collector has no per-contact objects to trace.
 ## Inflate is wasm libdeflate
 
 `@gmod/inflate` (wasm libdeflate) replaced pure-JS `pako` (shipped through
-v1.0.0). `pnpm benchonly inflate` asserts that both produce identical output,
-then times cold end-to-end fetches. The table lists medians in ms:
+v1.0.0). The table lists medians in ms of cold end-to-end fetches, from a
+one-off run recorded in commit `f8a0912`:
 
 | fetch                            | pako | wasm |
 | -------------------------------- | ---: | ---: |
@@ -112,6 +112,12 @@ numbers show the local ceiling rather than the end-to-end gain.
 Each block is a separate zlib stream, so `DecompressionStream` pays its
 per-call overhead once per block. That makes it 3–7x native zlib, slower than
 wasm throughout, and slower than pako at small block sizes.
+
+`pnpm bench:inflate` times wasm, pako, node zlib and `DecompressionStream`
+over every intra-chromosomal block of `test/data/test.hic`, each in a separate
+process, after asserting that all four produce identical output. The 3–7x
+figure comes from the vitest benchmark the script replaced, which timed the
+same arms.
 
 ## Results in place of console logs
 

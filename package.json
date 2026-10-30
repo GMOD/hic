@@ -41,7 +41,7 @@
     "postversion": "git push --follow-tags",
     "build": "pnpm build:esm && pnpm build:es5",
     "coverage": "pnpm test --coverage",
-    "benchonly": "vitest bench",
+    "bench:inflate": "node --experimental-strip-types scripts/bench-inflate.ts",
     "bench:cache": "node --experimental-strip-types scripts/bench-cache.ts",
     "bench:requests": "node --experimental-strip-types scripts/bench-requests.ts",
     "bench:straw": "node --experimental-strip-types scripts/bench-straw.ts",
