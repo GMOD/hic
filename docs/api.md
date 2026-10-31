@@ -189,6 +189,13 @@ file. `opts` is
 `{ onProgress, signal }` — see [Progress](#progress) and
 [Cancellation](#cancellation).
 
+## `clearCache()`
+
+`clearCache` drops every cached block and credits its bytes back to a
+`blockCacheBudget` at once, for a consumer closing a file it may hold on to.
+The header and the block indexes stay, since they are small and re-reading them
+costs a round trip.
+
 ## Progress
 
 `getContactRecords` and `getNormalizationOptions` both take an optional

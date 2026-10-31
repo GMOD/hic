@@ -123,3 +123,29 @@ test('a block nothing reads for the idle timeout is dropped', async () => {
   await hic.getContactRecords('KR', region, region, RES)
   expect(file.state.reads).toBeGreaterThan(0)
 })
+
+test('blocks idle out after three minutes by default', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+  const file = countingReader(openTestHic())
+  const hic = new HicFile({ reader: file })
+  await hic.getContactRecords('KR', region, region, RES)
+  vi.advanceTimersByTime(2 * 60_000)
+  file.state.reads = 0
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(file.state.reads).toBe(0)
+  vi.advanceTimersByTime(4 * 60_000)
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(file.state.reads).toBeGreaterThan(0)
+})
+
+test('clearing the cache credits its blocks back to the budget', async () => {
+  const budget = new SharedBudget(Infinity)
+  const file = countingReader(openTestHic())
+  const hic = new HicFile({ reader: file, blockCacheBudget: budget })
+  await hic.getContactRecords('KR', region, region, RES)
+  hic.clearCache()
+  expect(budget.total).toBe(0)
+  file.state.reads = 0
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(file.state.reads).toBeGreaterThan(0)
+})

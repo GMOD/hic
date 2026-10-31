@@ -285,6 +285,14 @@ export class HicFile {
     }
   }
 
+  /**
+   * Drops every cached block, crediting their bytes back to a
+   * `blockCacheBudget` at once rather than when the file is collected.
+   */
+  clearCache() {
+    this.blockCache.clear()
+  }
+
   async init(opts?: BaseOpts) {
     return this.headerCache.get('header', opts?.signal, signal =>
       this.readHeaderAndFooter(signal),
