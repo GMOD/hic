@@ -2,13 +2,15 @@
 
 ## `new HicFile(config)`
 
-| option               | type                | description                                         |
-| -------------------- | ------------------- | --------------------------------------------------- |
-| `filehandle`         | `GenericFilehandle` | a `generic-filehandle2` handle (`RemoteFile`, …)    |
-| `path`               | `string`            | a local path, Node only                             |
-| `reader`             | `Reader`            | anything with `read(position, length, opts?)`       |
-| `nvi`                | `string`            | `"position,size"` of the normalization vector index |
-| `blockCacheMaxBytes` | `number`            | block cache memory ceiling, default 128 MB          |
+| option                    | type                | description                                          |
+| ------------------------- | ------------------- | ---------------------------------------------------- |
+| `filehandle`              | `GenericFilehandle` | a `generic-filehandle2` handle (`RemoteFile`, …)     |
+| `path`                    | `string`            | a local path, Node only                              |
+| `reader`                  | `Reader`            | anything with `read(position, length, opts?)`        |
+| `nvi`                     | `string`            | `"position,size"` of the normalization vector index  |
+| `blockCacheMaxBytes`      | `number`            | block cache memory ceiling, default 128 MB           |
+| `blockCacheIdleTimeoutMs` | `number`            | drop a block unread this long, default three minutes |
+| `blockCacheBudget`        | `Budget`            | a `SharedBudget` shared with other files' caches     |
 
 Pass exactly one of `filehandle`, `path` or `reader`. A `HicFile` reads nothing
 until the first call. Every caller that arrives while the header parse is in
@@ -32,7 +34,12 @@ Each `HicFile` instance has three caches:
 
 `blockCacheMaxBytes` sets that 128 MB ceiling, and it is the only capacity a
 caller can change, because it is the only one bounding memory rather than a
-working set. The library derives the two entry caps from how many region pairs a
+working set. It bounds one file; a consumer holding several open passes one
+`SharedBudget` from
+[@gmod/shared-read-cache](https://www.npmjs.com/package/@gmod/shared-read-cache)
+as `blockCacheBudget` to all of them, and blocks are then evicted
+least-recently-used across every file. A block nothing has read for
+`blockCacheIdleTimeoutMs` is dropped either way. The library derives the two entry caps from how many region pairs a
 fetch runs at once (24 chromosomes make 300 pairs), so a caller setting them
 would only repeat that calculation.
 [dataflow.md](dataflow.md#why-so-much-of-it-is-yellow) explains what the

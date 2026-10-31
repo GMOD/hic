@@ -98,8 +98,9 @@ See [docs/api.md](docs/api.md) for the full API reference.
 - Bins are base pairs only; this fork drops the FRAG (restriction-fragment)
   code paths.
 - Chromosome names match the file's own exactly, with no `chr` aliasing.
-- Each `HicFile` caches up to 128 MB of decompressed contacts. Pass
-  `blockCacheMaxBytes` to change that ceiling.
+- Each `HicFile` caches up to 128 MB of decompressed contacts, and drops a
+  block nothing has read for three minutes. Pass `blockCacheMaxBytes` to change
+  that ceiling, or a shared `blockCacheBudget` to bound several files together.
 - Record order is unspecified — the result concatenates whole blocks, cached
   ones first.
 

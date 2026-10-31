@@ -1,4 +1,5 @@
-import { expect, test } from 'vitest'
+import { SharedBudget } from '@gmod/shared-read-cache'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import { openTestHic } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
@@ -91,4 +92,34 @@ test('the budget changes reads, not records', async () => {
   // and the evicting fetch matches its own first pass, so eviction mid-fetch
   // does not drop a block on the floor
   expect(contactSet(tight.first)).toEqual(contactSet(tight.second))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+test('blocks join a shared budget, and lowering it re-reads them', async () => {
+  const budget = new SharedBudget(Infinity)
+  const file = countingReader(openTestHic())
+  const hic = new HicFile({ reader: file, blockCacheBudget: budget })
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(budget.total).toBeGreaterThan(100_000)
+  file.state.reads = 0
+  budget.limit = 0
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(file.state.reads).toBeGreaterThan(0)
+})
+
+test('a block nothing reads for the idle timeout is dropped', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+  const file = countingReader(openTestHic())
+  const hic = new HicFile({ reader: file, blockCacheIdleTimeoutMs: 60_000 })
+  await hic.getContactRecords('KR', region, region, RES)
+  vi.advanceTimersByTime(30_000)
+  file.state.reads = 0
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(file.state.reads).toBe(0)
+  vi.advanceTimersByTime(120_000)
+  await hic.getContactRecords('KR', region, region, RES)
+  expect(file.state.reads).toBeGreaterThan(0)
 })

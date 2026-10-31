@@ -21,6 +21,7 @@ import type {
   ProgressOpts,
   Reader,
 } from './types.ts'
+import type { Budget } from '@gmod/shared-read-cache'
 import type { GenericFilehandle } from 'generic-filehandle2'
 
 /**
@@ -99,6 +100,18 @@ export interface HicConfig {
    * cheaper than the memory.
    */
   blockCacheMaxBytes?: number
+  /**
+   * Drop a cached block nothing has read for this long. Defaults to three
+   * minutes, the window `@gmod/bam` and `@gmod/tabix` use; `0` keeps blocks
+   * until the byte ceiling evicts them.
+   */
+  blockCacheIdleTimeoutMs?: number
+  /**
+   * A budget shared with other files' caches, in bytes, evicted
+   * least-recently-used across all of them. `blockCacheMaxBytes` bounds one
+   * file, which is no bound on a consumer holding several open.
+   */
+  blockCacheBudget?: Budget
 }
 
 // Cached blocks are the decompressed records and nothing else. hic-straw also
@@ -164,6 +177,7 @@ function truncateRecords(records: ContactRecords, n: number): ContactRecords {
 // working-set sizes derived from how many region pairs a fetch runs at once,
 // which the library knows and the caller would only have to rederive.
 const BLOCK_CACHE_MAX_BYTES = 128 * 1024 * 1024
+const BLOCK_CACHE_IDLE_TIMEOUT_MS = 3 * 60 * 1000
 // One entry per (chrIdx1, chrIdx2), so the working set is the pair count.
 // 512 covers a 31-region view; human whole-genome is 300. A matrix holds the
 // block index for each of its BP zoom levels, which is small beside a block.
@@ -244,11 +258,21 @@ export class HicFile {
   private meta: HicMetadata | undefined
 
   constructor(config: HicConfig) {
-    const { filehandle, path, reader, nvi, blockCacheMaxBytes } = config
+    const {
+      filehandle,
+      path,
+      reader,
+      nvi,
+      blockCacheMaxBytes = BLOCK_CACHE_MAX_BYTES,
+      blockCacheIdleTimeoutMs = BLOCK_CACHE_IDLE_TIMEOUT_MS,
+      blockCacheBudget,
+    } = config
     this.nvi = nvi
     this.blockCache = new SharedReadCache({
-      maxSize: blockCacheMaxBytes ?? BLOCK_CACHE_MAX_BYTES,
+      maxSize: blockCacheMaxBytes,
       sizeOf: blockCacheWeight,
+      idleTimeoutMs: blockCacheIdleTimeoutMs,
+      budget: blockCacheBudget,
     })
     if (reader) {
       this.file = reader
