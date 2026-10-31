@@ -1,3 +1,13 @@
+## [2.3.0](https://github.com/GMOD/hic/compare/v2.2.0...v2.3.0) (2026-10-31)
+
+### Chores
+
+- Replace the vitest inflate bench with a node script ([893d643](https://github.com/GMOD/hic/commit/893d64384ffe63d7f752ce416c409be8922debb8))
+
+### Features
+
+- The block cache idles out and takes a shared budget ([9f8ec92](https://github.com/GMOD/hic/commit/9f8ec92e3b23ae81f7a5d69a1df854d16aa020ce))
+
 ## [2.2.0](https://github.com/GMOD/hic/compare/v2.1.0...v2.2.0) (2026-10-22)
 
 ### Features
