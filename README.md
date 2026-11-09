@@ -113,7 +113,6 @@ See [docs/api.md](docs/api.md) for the full API reference.
   hic-straw, and what measured it
 - [docs/correctness.md](docs/correctness.md) — parsing differences from
   hic-straw
-- [CONTRIBUTING.md](CONTRIBUTING.md) — development and release steps
 
 ## Academic use
 
