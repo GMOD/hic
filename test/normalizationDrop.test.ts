@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 
-import { TEST_HIC } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
+import { TEST_HIC } from './testFile.ts'
 
 import type { HicRegion } from '../src/index.ts'
 

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 
-import { openTestHicInMemory } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
+import { openTestHicInMemory } from './testFile.ts'
 
 import type { HicRegion, Reader } from '../src/index.ts'
 

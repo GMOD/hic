@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { openTestHic } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
+import { openTestHic } from './testFile.ts'
 
 import type { Reader } from '../src/index.ts'
 import type { MockInstance } from 'vitest'

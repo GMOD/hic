@@ -1,8 +1,8 @@
 import { SharedBudget } from '@gmod/shared-read-cache'
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { openTestHic } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
+import { openTestHic } from './testFile.ts'
 
 import type { ContactRecords, HicRegion, Reader } from '../src/index.ts'
 

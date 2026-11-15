@@ -1,8 +1,8 @@
 import { LocalFile } from 'generic-filehandle2'
 import { expect, test, vi } from 'vitest'
 
-import { TEST_HIC, openTestHicInMemory } from './testFile.ts'
 import { HicFile } from '../src/index.ts'
+import { TEST_HIC, openTestHicInMemory } from './testFile.ts'
 
 import type { BaseOpts, HicRegion, Reader } from '../src/index.ts'
 
