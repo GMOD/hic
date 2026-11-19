@@ -1,3 +1,29 @@
+## [3.0.0](https://github.com/GMOD/hic/compare/v2.4.0...v3.0.0) (2026-11-19)
+
+### Bug Fixes
+
+- **BREAKING** A same-chromosome query keeps the contacts stored mirrored, and bothOrientations returns them both ways round ([c299430](https://github.com/GMOD/hic/commit/c299430b2944a72a2bfa18fd8a6a2b40ce0955a3))
+
+### Chores
+
+- Drop persisted checkout credentials and the publish job's cache ([01cf4e9](https://github.com/GMOD/hic/commit/01cf4e9734d38e438ec630a4b5dacbf553180832))
+
+### Documentation
+
+- Drop CONTRIBUTING from the README docs list ([4fc2f63](https://github.com/GMOD/hic/commit/4fc2f63cfca7d30015d30f0a879142a93fc840c1))
+
+### Features
+
+- **BREAKING** GetContactRecords returns bin1 along region1, and a missing binsize as no records ([dc54f0c](https://github.com/GMOD/hic/commit/dc54f0c1927aff8648cf745c6b5668df67d45356))
+
+### Other Changes
+
+- Bump deps, drop unused dev deps and stale ignores ([2576ac1](https://github.com/GMOD/hic/commit/2576ac18cae2dc593e822bc105032dc67940d178))
+
+### Tests
+
+- Same-chromosome block selection is symmetric in the two windows, v8 and v9 ([a24e6c2](https://github.com/GMOD/hic/commit/a24e6c2b6cb8a175af2785516f842ed4dc274dfe))
+
 ## [2.4.0](https://github.com/GMOD/hic/compare/v2.3.0...v2.4.0) (2026-10-31)
 
 ### Features
