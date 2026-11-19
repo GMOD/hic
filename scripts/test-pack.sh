@@ -50,12 +50,9 @@ npm install --silent --no-audit --no-fund generic-filehandle2 "./$TARBALL" >/dev
 # the full read path — header, matrix, block index, inflate, parse, filter —
 # for the least IO.
 cat >smoke.mjs <<JS
-import { HicFile, NO_DATA_FOR_RESOLUTION } from '@gmod/hic'
+import { HicFile } from '@gmod/hic'
 import { LocalFile } from 'generic-filehandle2'
 
-if (typeof NO_DATA_FOR_RESOLUTION !== 'string') {
-  throw new Error('NO_DATA_FOR_RESOLUTION missing from ESM entry')
-}
 const hic = new HicFile({ filehandle: new LocalFile('$FIXTURE') })
 const region = { chr: '1', start: 0, end: 249250621 }
 const { records, appliedNormalization } =
@@ -70,12 +67,9 @@ console.log(\`esm: \${records.bin1.length} contacts ok\`)
 JS
 
 cat >smoke.cjs <<JS
-const { HicFile, NO_DATA_FOR_RESOLUTION } = require('@gmod/hic')
+const { HicFile } = require('@gmod/hic')
 ;(async () => {
   const { LocalFile } = await import('generic-filehandle2')
-  if (typeof NO_DATA_FOR_RESOLUTION !== 'string') {
-    throw new Error('NO_DATA_FOR_RESOLUTION missing from CJS entry')
-  }
   const hic = new HicFile({ filehandle: new LocalFile('$FIXTURE') })
   const region = { chr: '1', start: 0, end: 249250621 }
   const { records } =

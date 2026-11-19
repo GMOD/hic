@@ -44,9 +44,15 @@ returns 78 contacts from hic-straw, against 901 for the same pair asked in
 genomic order. Everything but the overlap sliver goes missing, which renders as
 a sparse off-diagonal block rather than as an error.
 
-This package tests `region1.start > region2.start` instead (on the same
-chromosome), which fires on the overlapping case too and leaves forward order
-and an identical pair alone.
+No swap test is enough. Comparing starts instead, as this package once did,
+fixes that case and still drops the contacts of a nested pair stored mirrored:
+`(50-150 Mb, 50-80 Mb)` lost `(112.5 Mb, 62.5 Mb)`, which the file stores as
+`(62.5 Mb, 112.5 Mb)`. Within one chromosome this package never swaps the
+query; it places each stored contact in whichever orientation lands it inside
+`region1` × `region2`. Block selection already covers both orientations, since
+v8 folds every block onto the stored triangle and v9's position-along-diagonal
+and depth ranges are symmetric in the two windows. `test/regionOrder.test.ts`
+checks nine window pairs against the chromosome's whole stored triangle.
 
 ## A v8 file with no normalization data throws mid-parse
 

@@ -11,8 +11,8 @@ join each pair of positions.
   stores several binsizes as zoom levels; indices count from chromosome
   start, so bin 40 at 2.5 Mb begins at 100 Mb.
 - **Matrix** — one per chromosome pair, with axes bin1 and bin2. Only
-  `bin1 <= bin2` is stored, so a query arriving the other way round is read
-  swapped and swapped back.
+  `bin1 <= bin2` is stored within a chromosome, so each stored contact is
+  placed in whichever orientation fits the query's rectangle.
 - **Block** — a matrix zoom level tiled into compressed, indexed squares, so
   a viewport reads only the tiles it overlaps.
 - **Vector** — a one-dimensional per-bin correction (coverage, mappability,

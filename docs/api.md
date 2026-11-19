@@ -72,8 +72,8 @@ Each `Chromosome` has these fields:
 `{ chr, start, end }` with 0-based half-open coordinates, and `chr` must match
 a name in `getMetaData().chromosomes` exactly. `binsize` is in base pairs.
 `normalization` is one of `getNormalizationOptions()`, or `'NONE'`. `opts` is
-`{ onProgress, signal }` — see [Progress](#progress) and
-[Cancellation](#cancellation).
+`{ onProgress, signal, bothOrientations }` — see [Progress](#progress),
+[Cancellation](#cancellation) and below.
 
 A `HicRegion` has these fields:
 
@@ -125,18 +125,25 @@ the end of the file's vector counts as NaN.
 `appliedNormalization` still names the requested scheme when the reader leaves
 contacts out.
 
-`bin1` always runs along `region1` and `bin2` along `region2`. A `.hic` stores
-only the `bin1 <= bin2` half of the matrix, so the reader swaps a query whose
-`region1` is to the right of `region2`, meaning a higher chromosome index, or
-the same chromosome and a later start, and swaps the records back.
+`bin1` always runs along `region1` and `bin2` along `region2`, whatever the
+order of the two regions. Between chromosomes the file holds one matrix, lower
+chromosome index first, and the reader swaps a query the other way round and
+swaps the records back. Within one chromosome the file holds only the
+`bin1 <= bin2` half, so the reader places each stored contact in whichever
+orientation lands it inside `region1` × `region2`; windows that overlap or nest
+hold contacts of both kinds.
+
+A contact with both ends inside both windows — any off-diagonal contact of
+`(region, region)`, or one inside the overlap of two overlapping windows —
+fits both ways round and comes back once. Pass `opts.bothOrientations` to get
+it both ways round, as a dense matrix of the rectangle would hold it: a view
+drawing the block between two regions of one chromosome wants that, and a view
+drawing one region's triangle does not.
 
 A region pair with no matrix at `binsize`, whether the file has no matrix for
 the pair or only other binsizes of it, comes back with no records rather than
 an error. Many files store inter-chromosomal maps only at coarse binsizes, so a
 caller fetching every pair of a multi-region view meets this routinely.
-
-A chromosome pair with no matrix at all — plenty of files store no
-inter-chromosomal maps — returns no records instead of throwing.
 
 ## `getExpectedValues(normalization, region1, region2, binsize, opts?)`
 
@@ -265,7 +272,7 @@ norm-vector-index discovery — is `private`, so this list is the whole surface.
 
 `HicConfig`, `HicMetadata`, `HicRegion`, `Chromosome`, `Zoom`,
 `ContactRecords`, `ExpectedValues`, `Reader`, `BaseOpts`, `ProgressCallback`,
-`ProgressOpts`.
+`ProgressOpts`, `ContactRecordOpts`.
 
 ## `readerFromFilehandle(filehandle): Reader`
 

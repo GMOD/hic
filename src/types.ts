@@ -45,6 +45,15 @@ export interface ProgressOpts extends BaseOpts {
   onProgress?: ProgressCallback
 }
 
+export interface ContactRecordOpts extends ProgressOpts {
+  /**
+   * On one chromosome, a contact with both ends inside both windows comes
+   * back once each way round rather than once, as a dense matrix of the
+   * rectangle would hold it.
+   */
+  bothOrientations?: boolean
+}
+
 export interface Chromosome {
   index: number
   name: string

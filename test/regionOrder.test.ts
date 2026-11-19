@@ -5,16 +5,16 @@ import { TEST_HIC } from './testFile.ts'
 
 import type { HicRegion } from '../src/index.ts'
 
-// A `.hic` stores only the `bin1 <= bin2` half, so `getContactRecords` swaps a
-// query whose x window sits right of its y window, then swaps the records back
-// so `bin1` runs along `region1` whatever the order. A multi-region view is
-// what makes the swap reachable in every direction: it queries every displayed
-// pair `(i, j)` in SCREEN order, which need not be genomic order, and the
-// displayed regions may overlap.
+// A `.hic` stores only the `bin1 <= bin2` half of a chromosome's matrix, and a
+// multi-region view queries every displayed pair `(i, j)` in SCREEN order,
+// which need not be genomic order, over windows that may overlap or nest. No
+// single orientation of such a query covers its rectangle, so every case here
+// is checked against the chromosome's whole stored triangle, placed by hand.
 //
-// These read the real file, because the bug this pins was one the arithmetic
-// hides: the wrong window still returns contacts, just far too few, and the
-// display draws that as a sparse off-diagonal block rather than as an error.
+// These read the real file, because the bugs this pins were ones the
+// arithmetic hides: the wrong window still returns contacts, just too few, and
+// the display draws that as a sparse off-diagonal block rather than as an
+// error.
 
 const RES = 2_500_000
 const chr1 = (start: number, end: number): HicRegion => ({
@@ -22,78 +22,129 @@ const chr1 = (start: number, end: number): HicRegion => ({
   start,
   end,
 })
-
-// Two overlapping windows on chr1: 50-150Mb and 100-200Mb.
+const WHOLE = chr1(0, 249_250_621)
 const LEFT = chr1(50_000_000, 150_000_000)
 const RIGHT = chr1(100_000_000, 200_000_000)
-// Disjoint, for the case the original `start >= end` test already handled.
 const FAR_LEFT = chr1(0, 50_000_000)
+const NESTED = chr1(50_000_000, 80_000_000)
+const INNER = chr1(81_300_000, 101_200_000)
 
 function open() {
   return new HicFile({ path: TEST_HIC })
 }
 
-async function records(region1: HicRegion, region2: HicRegion, res = RES) {
-  const { records: recs } = await open().getContactRecords(
-    'NONE',
-    region1,
-    region2,
-    res,
-  )
-  return {
-    n: recs.bin1.length,
-    bin1: [...recs.bin1],
-    bin2: [...recs.bin2],
-    counts: [...recs.counts],
+function cells({
+  bin1,
+  bin2,
+  counts,
+}: {
+  bin1: ArrayLike<number>
+  bin2: ArrayLike<number>
+  counts: ArrayLike<number>
+}) {
+  return Array.from(bin1, (b1, i) => `${b1},${bin2[i]},${counts[i]}`).sort()
+}
+
+const window = ({ start, end }: HicRegion) =>
+  [Math.floor(start / RES), Math.ceil(end / RES)] as const
+
+async function expected(
+  norm: string,
+  x: HicRegion,
+  y: HicRegion,
+  both: boolean,
+) {
+  const { records } = await open().getContactRecords(norm, WHOLE, WHOLE, RES)
+  const [x1, x2] = window(x)
+  const [y1, y2] = window(y)
+  const out: string[] = []
+  records.bin1.forEach((a, i) => {
+    const b = records.bin2[i]!
+    const c = records.counts[i]!
+    const fits = a >= x1 && a < x2 && b >= y1 && b < y2
+    const mirrorFits = a !== b && b >= x1 && b < x2 && a >= y1 && a < y2
+    if (fits) {
+      out.push(`${a},${b},${c}`)
+    }
+    if (mirrorFits && (both || !fits)) {
+      out.push(`${b},${a},${c}`)
+    }
+  })
+  return out.sort()
+}
+
+const PAIRS: [string, HicRegion, HicRegion][] = [
+  ['identical', LEFT, LEFT],
+  ['overlapping, genomic order', LEFT, RIGHT],
+  ['overlapping, right-to-left', RIGHT, LEFT],
+  ['nested, sharing a start', LEFT, NESTED],
+  ['nested, sharing a start, reversed', NESTED, LEFT],
+  ['nested inside, off-grid', LEFT, INNER],
+  ['nested inside, off-grid, reversed', INNER, LEFT],
+  ['disjoint', FAR_LEFT, RIGHT],
+  ['disjoint, right-to-left', RIGHT, FAR_LEFT],
+]
+
+for (const norm of ['NONE', 'KR']) {
+  for (const both of [false, true]) {
+    for (const [name, x, y] of PAIRS) {
+      test(`${name}, ${norm}${both ? ', both orientations' : ''}: every contact of the rectangle, bin1 along region1`, async () => {
+        const { records } = await open().getContactRecords(norm, x, y, RES, {
+          bothOrientations: both,
+        })
+        const want = await expected(norm, x, y, both)
+        expect(want.length).toBeGreaterThan(0)
+        expect(cells(records)).toEqual(want)
+      })
+    }
   }
 }
 
-const inWindow = (bins: number[], { start, end }: HicRegion) =>
-  bins.every(b => b >= Math.floor(start / RES) && b < Math.ceil(end / RES))
-
-test('an overlapping same-chr pair asked right-to-left comes back along the asked axes', async () => {
-  const genomic = await records(LEFT, RIGHT)
-  const displayed = await records(RIGHT, LEFT)
-
-  // The pair holds real off-diagonal signal, so a dropped window is visible in
-  // the count rather than being an empty-vs-empty comparison.
-  expect(genomic.n).toBe(901)
-
-  // Comparing `region1.start` against `region2.END` — hic-straw's test — leaves
-  // this un-transposed and asks for the half of the matrix the file does not
-  // store, which returned the 78 contacts of the overlap sliver and silently
-  // dropped the other 823.
-  expect(displayed.n).toBe(genomic.n)
-  expect(displayed.bin1).toEqual(genomic.bin2)
-  expect(displayed.bin2).toEqual(genomic.bin1)
-  expect(displayed.counts).toEqual(genomic.counts)
-  expect(inWindow(displayed.bin1, RIGHT)).toBe(true)
-  expect(inWindow(displayed.bin2, LEFT)).toBe(true)
+// Transposing on the windows' starts, as this reader once did, returned none
+// of these: a contact stored mirrored lies outside the window it asked for.
+test('a nested pair keeps the contacts stored mirrored', async () => {
+  const { records } = await open().getContactRecords('NONE', LEFT, NESTED, RES)
+  const [, x2] = window(NESTED)
+  const mirrored = Array.from(records.bin1).filter(b1 => b1 >= x2)
+  expect(mirrored.length).toBeGreaterThan(0)
 })
 
-test('a disjoint same-chr pair asked right-to-left comes back along the asked axes', async () => {
-  const genomic = await records(FAR_LEFT, RIGHT)
-  const displayed = await records(RIGHT, FAR_LEFT)
-
-  expect(genomic.n).toBeGreaterThan(0)
-  expect(displayed.n).toBe(genomic.n)
-  expect(displayed.bin1).toEqual(genomic.bin2)
-  expect(inWindow(displayed.bin1, RIGHT)).toBe(true)
-  expect(inWindow(displayed.bin2, FAR_LEFT)).toBe(true)
+test('an identical pair comes back as its triangle, or with both orientations as its square', async () => {
+  const hic = open()
+  const triangle = await hic.getContactRecords('NONE', LEFT, LEFT, RES)
+  const square = await hic.getContactRecords('NONE', LEFT, LEFT, RES, {
+    bothOrientations: true,
+  })
+  const diagonal = Array.from(triangle.records.bin1).filter(
+    (b1, i) => b1 === triangle.records.bin2[i],
+  ).length
+  expect(square.records.bin1.length).toBe(
+    2 * triangle.records.bin1.length - diagonal,
+  )
 })
 
-test('forward order and a pair sharing a start keep bin1 along region1', async () => {
-  const forward = await records(LEFT, RIGHT)
-  expect(inWindow(forward.bin1, LEFT)).toBe(true)
-  expect(inWindow(forward.bin2, RIGHT)).toBe(true)
-  // Equal starts must not transpose: a `>=` would swap a pair sharing a start
-  // but not an end, and the swap back would then hand `bin1` the wrong window.
-  const shared = chr1(50_000_000, 80_000_000)
-  const sharedStart = await records(LEFT, shared)
-  expect(sharedStart.n).toBeGreaterThan(0)
-  expect(inWindow(sharedStart.bin2, shared)).toBe(true)
+test('an inter-chromosomal pair asked either way round comes back along the asked axes', async () => {
+  const hic = open()
+  const a = { chr: '1', start: 0, end: 249_250_621 }
+  const b = { chr: '2', start: 0, end: 243_199_373 }
+  const forward = await hic.getContactRecords('NONE', a, b, RES)
+  const reversed = await hic.getContactRecords('NONE', b, a, RES)
+  expect(forward.records.bin1.length).toBeGreaterThan(0)
+  expect(cells(reversed.records)).toEqual(
+    cells({
+      bin1: forward.records.bin2,
+      bin2: forward.records.bin1,
+      counts: forward.records.counts,
+    }),
+  )
 })
 
 test('a binsize the pair has no matrix at answers no records, as a missing matrix does', async () => {
-  expect((await records(LEFT, RIGHT, 50_000)).n).toBe(0)
+  const { records } = await open().getContactRecords(
+    'NONE',
+    LEFT,
+    RIGHT,
+    50_000,
+  )
+  expect(records.bin1.length).toBe(0)
 })

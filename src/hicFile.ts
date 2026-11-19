@@ -15,6 +15,7 @@ import type {
   BaseOpts,
   BlockIndexEntry,
   Chromosome,
+  ContactRecordOpts,
   ExpectedValues,
   HicMetadata,
   HicRegion,
@@ -453,29 +454,30 @@ export class HicFile {
     region1: HicRegion,
     region2: HicRegion,
     binsize: number,
-    opts?: ProgressOpts,
+    opts?: ContactRecordOpts,
   ) {
     await this.init(opts)
 
     const idx1 = this.chromosomeIndexMap.get(region1.chr)
     const idx2 = this.chromosomeIndexMap.get(region2.chr)
 
-    // A `.hic` stores only `bin1 <= bin2`, so a query whose x window sits to the
-    // right of its y window has to be swapped or it asks for the half of the
-    // matrix that does not exist. The same-chromosome test compares **starts**,
-    // not this region's start against the other's end: upstream hic-straw used
-    // `region1.start >= region2.end`, which catches a reversed pair only while
-    // the two are disjoint, and a multi-region view is free to display two
-    // *overlapping* regions of one chromosome right-to-left. Measured on
-    // chr1 at 2.5 Mb, `(100-200Mb, 50-150Mb)` returned 78 contacts against 901
-    // for the same pair in genomic order — everything but the overlap sliver
-    // silently missing, which renders as a sparse off-diagonal block rather
-    // than as an error. Comparing starts fires on both the disjoint and the
-    // overlapping case and leaves forward order (and an identical pair) alone.
-    const transpose =
-      idx1 !== undefined &&
-      idx2 !== undefined &&
-      (idx1 > idx2 || (idx1 === idx2 && region1.start > region2.start))
+    // Between chromosomes the file holds one matrix, lower index first, so a
+    // query the other way round is read swapped and swapped back.
+    //
+    // Within one chromosome it holds only `bin1 <= bin2`, and no single
+    // orientation of the query covers every rectangle: windows that overlap or
+    // nest hold contacts stored one way round and contacts stored the other.
+    // Transposing on the windows' starts, as this reader did, still dropped
+    // the contacts of a nested pair stored mirrored — `(50-150Mb, 50-80Mb)`
+    // lost `(112.5Mb, 62.5Mb)`, stored as `(62.5Mb, 112.5Mb)`. So the query is
+    // never swapped, and each stored contact is placed in whichever
+    // orientation lands it in the rectangle. Block selection is already
+    // symmetric there: v8 folds every block onto the stored triangle, and
+    // v9's position-along-diagonal and depth ranges do not change when the
+    // two windows swap.
+    const transpose = idx1 !== undefined && idx2 !== undefined && idx1 > idx2
+    const sameChr = idx1 !== undefined && idx1 === idx2
+    const bothOrientations = sameChr && !!opts?.bothOrientations
     const r1 = transpose ? region2 : region1
     const r2 = transpose ? region1 : region2
 
@@ -516,10 +518,21 @@ export class HicFile {
         capacity += block.records.bin1.length
       }
     }
+    if (bothOrientations) {
+      capacity *= 2
+    }
     const outBin1 = new Int32Array(capacity)
     const outBin2 = new Int32Array(capacity)
     const outCounts = new Float32Array(capacity)
     let n = 0
+
+    // Hoisted, and written inline below rather than through a per-record
+    // writer function, which measured twice as slow over 60k records. With no
+    // vectors every factor is 1.
+    const v1 = norm?.v1
+    const v2 = norm?.v2
+    const offset1 = norm?.offset1 ?? 0
+    const offset2 = norm?.offset2 ?? 0
 
     for (const block of blocks) {
       // An undefined block is most likely a base-pair range outside the
@@ -529,31 +542,33 @@ export class HicFile {
       }
       const { bin1, bin2, counts } = block.records
       const len = bin1.length
-      // `norm` is loop-invariant, so it selects the loop rather than being
-      // retested per record — which also hoists the vector/offset reads
-      if (norm) {
-        const { v1, v2, offset1, offset2 } = norm
-        for (let i = 0; i < len; i++) {
-          const b1 = bin1[i]!
-          const b2 = bin2[i]!
-          if (b1 >= x1 && b1 < x2 && b2 >= y1 && b2 < y2) {
-            const nvnv = v1[b1 - offset1]! * v2[b2 - offset2]!
-            if (nvnv !== 0 && !Number.isNaN(nvnv)) {
-              outBin1[n] = b1
-              outBin2[n] = b2
-              outCounts[n] = counts[i]! / nvnv
-              n++
-            }
-          }
-        }
-      } else {
-        for (let i = 0; i < len; i++) {
-          const b1 = bin1[i]!
-          const b2 = bin2[i]!
-          if (b1 >= x1 && b1 < x2 && b2 >= y1 && b2 < y2) {
+      for (let i = 0; i < len; i++) {
+        const b1 = bin1[i]!
+        const b2 = bin2[i]!
+        const fits = b1 >= x1 && b1 < x2 && b2 >= y1 && b2 < y2
+        const mirrored =
+          sameChr &&
+          b1 !== b2 &&
+          (bothOrientations || !fits) &&
+          b2 >= x1 &&
+          b2 < x2 &&
+          b1 >= y1 &&
+          b1 < y2
+        if (fits) {
+          const nvnv = v1 && v2 ? v1[b1 - offset1]! * v2[b2 - offset2]! : 1
+          if (nvnv !== 0 && !Number.isNaN(nvnv)) {
             outBin1[n] = b1
             outBin2[n] = b2
-            outCounts[n] = counts[i]!
+            outCounts[n] = counts[i]! / nvnv
+            n++
+          }
+        }
+        if (mirrored) {
+          const nvnv = v1 && v2 ? v1[b2 - offset1]! * v2[b1 - offset2]! : 1
+          if (nvnv !== 0 && !Number.isNaN(nvnv)) {
+            outBin1[n] = b2
+            outBin2[n] = b1
+            outCounts[n] = counts[i]! / nvnv
             n++
           }
         }
