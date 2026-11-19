@@ -110,4 +110,48 @@ describe('block selection covers the same window', () => {
     const region = { chr: '1', start: 210, end: 290 }
     expect(zoomData(100).getBlockNumbers(region, region, 9)).not.toHaveLength(0)
   })
+
+  // A same-chromosome query is never swapped, so whichever window comes first
+  // the selection has to hold every stored contact with one end in each. The
+  // block a contact `a <= b` is written to, by Juicer's writer: v8 tiles the
+  // triangle by row and column, v9 by position along the diagonal and depth.
+  const blockOf = (a: number, b: number, version: number) =>
+    version < 9
+      ? Math.floor(b / BLOCK_BIN_COUNT) * 100 + Math.floor(a / BLOCK_BIN_COUNT)
+      : Math.floor(
+          Math.log2(1 + Math.abs(a - b) / Math.SQRT2 / BLOCK_BIN_COUNT),
+        ) *
+          100 +
+        Math.floor((a + b) / 2 / BLOCK_BIN_COUNT)
+
+  const span = (start: number, end: number) => ({ chr: '1', start, end })
+  const PAIRS: [string, HicRegion, HicRegion][] = [
+    ['nested', span(0, 15_000), span(5_050, 8_000)],
+    ['overlapping', span(2_000, 12_000), span(7_000, 19_000)],
+    ['disjoint', span(0, 3_000), span(14_000, 19_950)],
+  ]
+
+  for (const version of [8, 9]) {
+    for (const [name, x, y] of PAIRS) {
+      test(`v${version}, ${name}: either order selects every block a contact between the windows is stored in`, () => {
+        const zd = zoomData(100)
+        const forward = zd.getBlockNumbers(x, y, version)
+        const reversed = zd.getBlockNumbers(y, x, version)
+        expect([...reversed].sort()).toEqual([...forward].sort())
+        const [x1, x2] = binWindow(x, 100)
+        const [y1, y2] = binWindow(y, 100)
+        const selected = new Set(forward)
+        const missing: string[] = []
+        for (let p = x1; p < x2; p++) {
+          for (let q = y1; q < y2; q++) {
+            const block = blockOf(Math.min(p, q), Math.max(p, q), version)
+            if (!selected.has(block)) {
+              missing.push(`${p},${q}`)
+            }
+          }
+        }
+        expect(missing).toEqual([])
+      })
+    }
+  }
 })
