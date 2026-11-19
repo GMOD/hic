@@ -26,8 +26,12 @@ const meta = await hic.getMetaData()
 await hic.getNormalizationOptions() // ['NONE', 'VC', 'VC_SQRT', 'KR', 'SCALE']
 
 const region = { chr: '1', start: 0, end: 20_000_000 }
-const { records, appliedNormalization, transposed } =
-  await hic.getContactRecords('KR', region, region, 2_500_000)
+const { records, appliedNormalization } = await hic.getContactRecords(
+  'KR',
+  region,
+  region,
+  2_500_000,
+)
 
 // records is struct-of-arrays: three parallel typed arrays
 records.bin1 // Int32Array of bin indices along region1
@@ -89,9 +93,9 @@ See [docs/api.md](docs/api.md) for the full API reference.
 
 - Bin indices are **absolute for their chromosome**, not relative to the
   requested region.
-- A `.hic` stores only the `bin1 <= bin2` half of the matrix, so a query whose x
-  window sits right of its y window gets swapped. `transposed` marks the swap,
-  and `bin1` then runs along `region2`.
+- `bin1` always runs along `region1`. A `.hic` stores only the `bin1 <= bin2`
+  half of the matrix, so a query whose x window sits right of its y window is
+  read swapped and swapped back.
 - `appliedNormalization` names the normalization the reader applied, which may
   differ from the one you asked for. The file stores vectors per (type,
   chromosome, unit, binsize), so it can offer KR at 5 kb and nothing at 2.5 Mb.

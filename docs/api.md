@@ -89,7 +89,6 @@ The call resolves to an object with these fields:
 | ---------------------- | ---------------- | --------------------------------------------------------------------------- |
 | `records`              | `ContactRecords` | the contacts, as parallel arrays                                            |
 | `appliedNormalization` | `string`         | the normalization requested, or `'NONE'` when the file has no vector for it |
-| `transposed`           | `boolean`        | `true` when the reader swapped the regions, so `bin1` runs along `region2`  |
 
 `ContactRecords` holds three arrays:
 
@@ -126,17 +125,15 @@ the end of the file's vector counts as NaN.
 `appliedNormalization` still names the requested scheme when the reader leaves
 contacts out.
 
-`transposed` marks that the reader swapped the query, because a `.hic` stores
-only the `bin1 <= bin2` half of the matrix. When it is true, `bin1` runs along
-`region2` and `bin2` along `region1`. The reader swaps a query whose `region1`
-is to the right of `region2`, meaning a higher chromosome index, or the same
-chromosome and a later start.
+`bin1` always runs along `region1` and `bin2` along `region2`. A `.hic` stores
+only the `bin1 <= bin2` half of the matrix, so the reader swaps a query whose
+`region1` is to the right of `region2`, meaning a higher chromosome index, or
+the same chromosome and a later start, and swaps the records back.
 
-`getContactRecords` throws an error beginning with `NO_DATA_FOR_RESOLUTION`
-(exported) if the region pair has a matrix but no data at `binsize`. A caller
-fetching many pairs at once will usually want to drop that pair rather than fail
-the whole fetch, which is why the package exports the constant instead of
-leaving callers to hand-copy the string.
+A region pair with no matrix at `binsize`, whether the file has no matrix for
+the pair or only other binsizes of it, comes back with no records rather than
+an error. Many files store inter-chromosomal maps only at coarse binsizes, so a
+caller fetching every pair of a multi-region view meets this routinely.
 
 A chromosome pair with no matrix at all — plenty of files store no
 inter-chromosomal maps — returns no records instead of throwing.

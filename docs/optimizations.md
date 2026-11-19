@@ -124,5 +124,7 @@ same arms.
 hic-straw reports a missing normalization and a chromosome pair with no matrix
 only through `console.log`. This package returns the same information in
 `appliedNormalization` and an empty result, where the caller can act on it.
-hic-straw swaps a transposed pair without telling the caller; here,
-`transposed` comes back with the records.
+hic-straw swaps a transposed pair without telling the caller, so its `bin1`
+can run along either region; here the records always come back along the
+axes the caller asked for. A pair with no matrix at the binsize is an empty
+result too, rather than an error to catch.

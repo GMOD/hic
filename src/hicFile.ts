@@ -24,14 +24,6 @@ import type {
 import type { Budget } from '@gmod/shared-read-cache'
 import type { GenericFilehandle } from 'generic-filehandle2'
 
-/**
- * Prefix of the error thrown when a region pair has no matrix at the requested
- * binsize. A caller fetching many region pairs at once will want to drop that
- * pair rather than fail the whole fetch, and it can only tell this apart from a
- * real failure by the message — so it is exported instead of hand-copied.
- */
-export const NO_DATA_FOR_RESOLUTION = 'No data available for resolution'
-
 const Short_MIN_VALUE = -32768
 const DOUBLE = 8
 const FLOAT = 4
@@ -582,14 +574,18 @@ export class HicFile {
     // and silently hands back raw counts; reporting it lets a display tell the
     // user which scheme they are actually looking at.
     //
-    // `transposed` says the query was swapped, so `bin1` runs along `region2`.
-    // Reported rather than left for the caller to re-derive: it is decided here
-    // from this file's chromosome indices, which a caller would otherwise have
-    // to look up again to know which axis to un-swap.
+    // A swapped query is swapped back, so `bin1` always runs along `region1`:
+    // the swap is decided from this file's chromosome indices, which a caller
+    // would otherwise have to look up again to know which axis to un-swap.
     return {
-      records: contactRecords,
+      records: transpose
+        ? {
+            bin1: contactRecords.bin2,
+            bin2: contactRecords.bin1,
+            counts: contactRecords.counts,
+          }
+        : contactRecords,
       appliedNormalization: norm ? normalization : 'NONE',
-      transposed: transpose,
     }
   }
 
@@ -641,20 +637,15 @@ export class HicFile {
     } else if (idx2 === undefined) {
       console.warn(`No chromosome named: ${region2.chr}`)
     } else {
-      // A chr pair with no matrix at all is routine, not an anomaly: plenty of
-      // .hic files store no inter-chromosomal maps, and a multi-region view asks
-      // for every pair. Answering with no blocks, rather than warning once per
-      // pair per fetch, leaves that for the caller to notice or ignore.
+      // A chr pair with no matrix, or none at this binsize, is routine, not an
+      // anomaly: plenty of .hic files store no inter-chromosomal maps, or only
+      // coarse ones, and a multi-region view asks for every pair. Answering
+      // with no blocks, rather than warning or throwing once per pair per
+      // fetch, leaves that for the caller to notice or ignore.
       const signalOpts = { signal: opts?.signal }
       const matrix = await this.getMatrix(idx1, idx2, signalOpts)
-      if (matrix) {
-        const zd = matrix.getZoomData(binSize)
-        if (!zd) {
-          throw new Error(
-            `${NO_DATA_FOR_RESOLUTION}: ${binSize} for map ${region1.chr}-${region2.chr}`,
-          )
-        }
-
+      const zd = matrix?.getZoomData(binSize)
+      if (zd) {
         const blockNumbers = zd.getBlockNumbers(region1, region2, this.version)
         const keys = blockNumbers.map(num => blockKey(num, zd))
         const cached = keys.map(key => this.blockCache.has(key))

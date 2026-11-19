@@ -1,4 +1,4 @@
-export { HicFile, NO_DATA_FOR_RESOLUTION } from './hicFile.ts'
+export { HicFile } from './hicFile.ts'
 export { readerFromFilehandle } from './reader.ts'
 
 export type { HicConfig } from './hicFile.ts'
